@@ -97,811 +97,2261 @@ local CreateGameMenu
 
 local SUPPORTED_GAMES = {
 [16472538603]  = { 
-        name = "THA BRONX 3🐍",     
-        placeId = 16472538603,
-        callback = function()
-            local Menu = CreateGameMenu()
-            local AimTab    = Menu.CreateTab("Aimbot")
-            local VisualTab = Menu.CreateTab("Visuals")
-            local ConfigTab = Menu.CreateTab("Settings")
+    name = "THA BRONX 3🐍",     
+    placeId = 16472538603,
+    callback = function()
+        local Menu = CreateGameMenu()
+        local AimTab    = Menu.CreateTab("Aimbot")
+        local VisualTab = Menu.CreateTab("Visuals")
+        local ConfigTab = Menu.CreateTab("Settings")
+        
+        local RunService       = game:GetService("RunService")
+        local UserInputService = game:GetService("UserInputService")
+        local ESP_THICK        = 2
+        local MAX_ESP_DISTANCE = 1000
+        local HEAD_DOT_BASE    = 140 
+
+        local aimbotEnabled  = false
+        local wallCheckEnabled = false
+        local aimSmoothness  = 1
+        local aimRadius      = 120
+        local fovVisible     = false
+        local aimTargetPart  = "Head"
+        local isRightClickHolding = false 
+
+        local COLOR_PRESETS = {
+            {name = "Crimson Red", color = Color3.fromRGB(255, 50, 50)},
+            {name = "Neon Mint",   color = Color3.fromRGB(0, 255, 140)},
+            {name = "Deep Blue",   color = Color3.fromRGB(0, 160, 255)},
+            {name = "Hot Pink",    color = Color3.fromRGB(255, 50, 180)},
+            {name = "Bright Gold", color = Color3.fromRGB(255, 215, 0)},
+            {name = "Pure White",  color = Color3.fromRGB(255, 255, 255)}
+        }
+
+        local boxColorIdx  = 1 
+        local skelColorIdx = 2 
+        local nameColorIdx = 6 
+
+        local ESP_COLOR      = COLOR_PRESETS[boxColorIdx].color
+        local ESP_SKEL_COLOR = COLOR_PRESETS[skelColorIdx].color
+        local ESP_NAME_COL   = COLOR_PRESETS[nameColorIdx].color
+
+        local boxEspEnabled  = false
+        local nameEspEnabled = false
+        local skelEspEnabled = false
+
+        local function isPlayerAliveAndActive(player)
+            if not player or player == LocalPlayer then return false end
             
-            local RunService       = game:GetService("RunService")
-            local UserInputService = game:GetService("UserInputService")
-            local ESP_THICK        = 2
-            local MAX_ESP_DISTANCE = 1000
-            local HEAD_DOT_BASE    = 140 
-
-            local aimbotEnabled  = false
-            local wallCheckEnabled = false
-            local aimSmoothness  = 1
-            local aimRadius      = 120
-            local fovVisible     = false
-            local aimTargetPart  = "Head"
-            local isRightClickHolding = false 
-
-            local COLOR_PRESETS = {
-                {name = "Crimson Red", color = Color3.fromRGB(255, 50, 50)},
-                {name = "Neon Mint",   color = Color3.fromRGB(0, 255, 140)},
-                {name = "Deep Blue",   color = Color3.fromRGB(0, 160, 255)},
-                {name = "Hot Pink",    color = Color3.fromRGB(255, 50, 180)},
-                {name = "Bright Gold", color = Color3.fromRGB(255, 215, 0)},
-                {name = "Pure White",  color = Color3.fromRGB(255, 255, 255)}
-            }
-
-            local boxColorIdx  = 1 
-            local skelColorIdx = 2 
-            local nameColorIdx = 6 
-
-            local ESP_COLOR      = COLOR_PRESETS[boxColorIdx].color
-            local ESP_SKEL_COLOR = COLOR_PRESETS[skelColorIdx].color
-            local ESP_NAME_COL   = COLOR_PRESETS[nameColorIdx].color
-
-            local boxEspEnabled  = false
-            local nameEspEnabled = false
-            local skelEspEnabled = false
-
-            Menu.AddHeader(AimTab, "Targeting Mechanisms")
-
-            Menu.AddToggle(AimTab, "Aimbot", false, function(state)
-                aimbotEnabled = state
-                manageAimEngineState()
-            end)
-
-            Menu.AddToggle(AimTab, "Wall Check", false, function(state)
-                wallCheckEnabled = state
-            end)
-
-            Menu.AddToggle(AimTab, "Show FOV Circle", false, function(state)
-                fovVisible = state
-            end)
-
-            Menu.AddSlider(AimTab, "FOV", 30, 500, aimRadius, function(val)
-                aimRadius = val
-            end)
-
-            Menu.AddSlider(AimTab, "Aim Smoothness", 1, 20, aimSmoothness, function(val)
-                aimSmoothness = val
-            end)
-
-            Menu.AddHeader(AimTab, "Target Priority Selection")
-
-            Menu.AddButton(AimTab, "Target: Head", function()
-                aimTargetPart = "Head"
-                showToast("Aim Target", "Now targeting: Head", "info")
-            end)
-
-            Menu.AddButton(AimTab, "Target: Torso", function()
-                aimTargetPart = "HumanoidRootPart"
-                showToast("Aim Target", "Now targeting: Torso", "info")
-            end)
-
-            Menu.AddHeader(VisualTab, "Player ESP Main Switches")
-
-            Menu.AddToggle(VisualTab, "2D Box ESP", false, function(state)
-                boxEspEnabled = state
-                manageESPState()
-            end)
-
-            Menu.AddToggle(VisualTab, "Name ESP", false, function(state)
-                nameEspEnabled = state
-                manageESPState()
-            end)
-
-            Menu.AddToggle(VisualTab, "Skeleton ESP", false, function(state)
-                skelEspEnabled = state
-                manageESPState()
-            end)
-
-
-            Menu.AddHeader(ConfigTab, "ESP Configuration")
+            local char = player.Character
+            if not char or not char:IsDescendantOf(workspace) then return false end
             
-            Menu.AddSlider(ConfigTab, "Line Thickness (px)", 1, 6, ESP_THICK, function(val)
-                ESP_THICK = val
-            end)
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if not hum or hum.Health <= 0 then return false end
+            
+            local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head")
+            if not hrp then return false end
+            
+            return true
+        end
 
-            Menu.AddSlider(ConfigTab, "Max Render Distance (studs)", 100, 3000, MAX_ESP_DISTANCE, function(val)
-                MAX_ESP_DISTANCE = val
-            end)
+        Menu.AddHeader(AimTab, "Targeting Mechanisms")
 
-            Menu.AddSlider(ConfigTab, "Skeleton Head Size", 50, 300, HEAD_DOT_BASE, function(val)
-                HEAD_DOT_BASE = val
-            end)
+        Menu.AddToggle(AimTab, "Aimbot", false, function(state)
+            aimbotEnabled = state
+            manageAimEngineState()
+        end)
 
-            Menu.AddHeader(ConfigTab, "Theme Customization")
+        Menu.AddToggle(AimTab, "Wall Check", false, function(state)
+            wallCheckEnabled = state
+        end)
 
-            Menu.AddButton(ConfigTab, "Cycle Box ESP Color", function()
-                boxColorIdx = (boxColorIdx % #COLOR_PRESETS) + 1
-                ESP_COLOR = COLOR_PRESETS[boxColorIdx].color
-            end)
+        Menu.AddToggle(AimTab, "Show FOV Circle", false, function(state)
+            fovVisible = state
+        end)
 
-            Menu.AddButton(ConfigTab, "Cycle Skeleton Color", function()
-                skelColorIdx = (skelColorIdx % #COLOR_PRESETS) + 1
-                ESP_SKEL_COLOR = COLOR_PRESETS[skelColorIdx].color
-            end)
+        Menu.AddSlider(AimTab, "FOV", 30, 500, aimRadius, function(val)
+            aimRadius = val
+        end)
 
-            Menu.AddButton(ConfigTab, "Cycle Name Tag Color", function()
-                nameColorIdx = (nameColorIdx % #COLOR_PRESETS) + 1
-                ESP_NAME_COL = COLOR_PRESETS[nameColorIdx].color
-            end)
+        Menu.AddSlider(AimTab, "Aim Smoothness", 1, 20, aimSmoothness, function(val)
+            aimSmoothness = val
+        end)
 
+        Menu.AddHeader(AimTab, "Target Priority Selection")
 
-            local aimRenderConn = nil
-            local fovCircleDraw = nil
-            local inputBeganConn = nil
-            local inputEndedConn = nil
+        Menu.AddButton(AimTab, "Target: Head", function()
+            aimTargetPart = "Head"
+            showToast("Aim Target", "Now targeting: Head", "info")
+        end)
 
-            pcall(function()
-                if Drawing and Drawing.new then
-                    fovCircleDraw = Drawing.new("Circle")
-                    fovCircleDraw.Thickness = 1
-                    fovCircleDraw.NumSides = 60
-                    fovCircleDraw.Filled = false
-                    fovCircleDraw.Color = Color3.fromRGB(255, 255, 255)
-                    fovCircleDraw.Visible = false
-                end
-            end)
+        Menu.AddButton(AimTab, "Target: Torso", function()
+            aimTargetPart = "HumanoidRootPart"
+            showToast("Aim Target", "Now targeting: Torso", "info")
+        end)
 
-            local function getClosestPlayerToMouth()
-                local target = nil
-                local shortestDistance = math.huge
-                local camera = workspace.CurrentCamera
-                local mouseLocation = UserInputService:GetMouseLocation()
+        Menu.AddHeader(VisualTab, "Player ESP Main Switches")
 
-                if not camera then return nil end
+        Menu.AddToggle(VisualTab, "2D Box ESP", false, function(state)
+            boxEspEnabled = state
+            manageESPState()
+        end)
 
-                for _, player in pairs(Players:GetPlayers()) do
-                    if player == LocalPlayer then continue end
-                    local char = player.Character
-                    local part = char and char:FindFirstChild(aimTargetPart)
-                    local hum  = char and char:FindFirstChildOfClass("Humanoid")
+        Menu.AddToggle(VisualTab, "Name ESP", false, function(state)
+            nameEspEnabled = state
+            manageESPState()
+        end)
 
-                    if part and hum and hum.Health > 0 then
-                        local screenPos, onScreen = camera:WorldToViewportPoint(part.Position)
-                        if onScreen then
-                            local distance = (Vector2.new(screenPos.X, screenPos.Y) - mouseLocation).Magnitude
-                            if distance < shortestDistance and distance <= aimRadius then
+        Menu.AddToggle(VisualTab, "Skeleton ESP", false, function(state)
+            skelEspEnabled = state
+            manageESPState()
+        end)
+
+        Menu.AddHeader(ConfigTab, "ESP Configuration")
+        
+        Menu.AddSlider(ConfigTab, "Line Thickness (px)", 1, 6, ESP_THICK, function(val)
+            ESP_THICK = val
+        end)
+
+        Menu.AddSlider(ConfigTab, "Max Render Distance (studs)", 100, 3000, MAX_ESP_DISTANCE, function(val)
+            MAX_ESP_DISTANCE = val
+        end)
+
+        Menu.AddSlider(ConfigTab, "Skeleton Head Size", 50, 300, HEAD_DOT_BASE, function(val)
+            HEAD_DOT_BASE = val
+        end)
+
+        Menu.AddHeader(ConfigTab, "Theme Customization")
+
+        Menu.AddButton(ConfigTab, "Cycle Box ESP Color", function()
+            boxColorIdx = (boxColorIdx % #COLOR_PRESETS) + 1
+            ESP_COLOR = COLOR_PRESETS[boxColorIdx].color
+        end)
+
+        Menu.AddButton(ConfigTab, "Cycle Skeleton Color", function()
+            skelColorIdx = (skelColorIdx % #COLOR_PRESETS) + 1
+            ESP_SKEL_COLOR = COLOR_PRESETS[skelColorIdx].color
+        end)
+
+        Menu.AddButton(ConfigTab, "Cycle Name Tag Color", function()
+            nameColorIdx = (nameColorIdx % #COLOR_PRESETS) + 1
+            ESP_NAME_COL = COLOR_PRESETS[nameColorIdx].color
+        end)
+
+        local aimRenderConn = nil
+        local fovCircleDraw = nil
+        local inputBeganConn = nil
+        local inputEndedConn = nil
+
+        pcall(function()
+            if Drawing and Drawing.new then
+                fovCircleDraw = Drawing.new("Circle")
+                fovCircleDraw.Thickness = 1
+                fovCircleDraw.NumSides = 60
+                fovCircleDraw.Filled = false
+                fovCircleDraw.Color = Color3.fromRGB(255, 255, 255)
+                fovCircleDraw.Visible = false
+            end
+        end)
+
+        local function getClosestPlayerToMouth()
+            local target = nil
+            local shortestDistance = math.huge
+            local camera = workspace.CurrentCamera
+            local mouseLocation = UserInputService:GetMouseLocation()
+
+            if not camera then return nil end
+
+            for _, player in pairs(Players:GetPlayers()) do
+                if not isPlayerAliveAndActive(player) then continue end
+
+                local char = player.Character
+                local part = char and char:FindFirstChild(aimTargetPart)
+
+                if part then
+                    local screenPos, onScreen = camera:WorldToViewportPoint(part.Position)
+                    if onScreen then
+                        local distance = (Vector2.new(screenPos.X, screenPos.Y) - mouseLocation).Magnitude
+                        if distance < shortestDistance and distance <= aimRadius then
+                            
+                            if wallCheckEnabled then
+                                local isBlocked = false
+                                local origin = camera.CFrame.Position
+                                local direction = (part.Position - origin)
                                 
-                                if wallCheckEnabled then
-                                    local isBlocked = false
-                                    local origin = camera.CFrame.Position
-                                    local direction = (part.Position - origin)
-                                    
-                                    local raycastParams = RaycastParams.new()
-                                    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-                                    local ignoreList = {LocalPlayer.Character, char, camera}
-                                    raycastParams.FilterDescendantsInstances = ignoreList
-                                    raycastParams.IgnoreWater = true
+                                local raycastParams = RaycastParams.new()
+                                raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+                                local ignoreList = {LocalPlayer.Character, char, camera}
+                                raycastParams.FilterDescendantsInstances = ignoreList
+                                raycastParams.IgnoreWater = true
 
-                                    while true do
-                                        local raycastResult = workspace:Raycast(origin, direction, raycastParams)
-                                        if not raycastResult then
-                                            break 
-                                        end
-
-                                        local hitInstance = raycastResult.Instance
-                                        if hitInstance and (hitInstance.Transparency > 0.5 or hitInstance.CanCollide == false) then
-                                            table.insert(ignoreList, hitInstance)
-                                            raycastParams.FilterDescendantsInstances = ignoreList
-                                        else
-                                            isBlocked = true
-                                            break
-                                        end
+                                while true do
+                                    local raycastResult = workspace:Raycast(origin, direction, raycastParams)
+                                    if not raycastResult then
+                                        break 
                                     end
 
-                                    if isBlocked then 
-                                        continue 
+                                    local hitInstance = raycastResult.Instance
+                                    if hitInstance and (hitInstance.Transparency > 0.5 or hitInstance.CanCollide == false) then
+                                        table.insert(ignoreList, hitInstance)
+                                        raycastParams.FilterDescendantsInstances = ignoreList
+                                    else
+                                        isBlocked = true
+                                        break
                                     end
                                 end
 
-                                target = part
-                                shortestDistance = distance
+                                if isBlocked then 
+                                    continue 
+                                end
                             end
+
+                            target = part
+                            shortestDistance = distance
                         end
                     end
                 end
-                return target
+            end
+            return target
+        end
+
+        local function handleAimSystemUpdate()
+            local camera = workspace.CurrentCamera
+            if not camera then return end
+
+            if fovCircleDraw then
+                fovCircleDraw.Position = UserInputService:GetMouseLocation()
+                fovCircleDraw.Radius = aimRadius
+                fovCircleDraw.Visible = fovVisible
             end
 
-            local function handleAimSystemUpdate()
-                local camera = workspace.CurrentCamera
-                if not camera then return end
+            if not aimbotEnabled then return end
+            if not isRightClickHolding then return end
 
+            local targetPart = getClosestPlayerToMouth()
+            if targetPart then
+                local lookCFrame = CFrame.new(camera.CFrame.Position, targetPart.Position)
+                if aimSmoothness <= 1 then
+                    camera.CFrame = lookCFrame
+                else
+                    camera.CFrame = camera.CFrame:Lerp(lookCFrame, 1 / aimSmoothness)
+                end
+            end
+        end
+
+        function manageAimEngineState()
+            if aimbotEnabled or fovVisible then
+                if not aimRenderConn then
+                    aimRenderConn = RunService.RenderStepped:Connect(handleAimSystemUpdate)
+                end
+                if not inputBeganConn then
+                    inputBeganConn = UserInputService.InputBegan:Connect(function(input, processed)
+                        if input.UserInputType == Enum.UserInputType.MouseButton2 then
+                            isRightClickHolding = true
+                        end
+                    end)
+                end
+                if not inputEndedConn then
+                    inputEndedConn = UserInputService.InputEnded:Connect(function(input)
+                        if input.UserInputType == Enum.UserInputType.MouseButton2 then
+                            isRightClickHolding = false
+                        end
+                    end)
+                end
+            else
+                if aimRenderConn then
+                    aimRenderConn:Disconnect()
+                    aimRenderConn = nil
+                end
+                if inputBeganConn then inputBeganConn:Disconnect(); inputBeganConn = nil end
+                if inputEndedConn then inputEndedConn:Disconnect(); inputEndedConn = nil end
+                isRightClickHolding = false
                 if fovCircleDraw then
-                    fovCircleDraw.Position = UserInputService:GetMouseLocation()
-                    fovCircleDraw.Radius = aimRadius
-                    fovCircleDraw.Visible = fovVisible
-                end
-
-                if not aimbotEnabled then return end
-                if not isRightClickHolding then return end
-
-                local targetPart = getClosestPlayerToMouth()
-                if targetPart then
-                    local lookCFrame = CFrame.new(camera.CFrame.Position, targetPart.Position)
-                    if aimSmoothness <= 1 then
-                        camera.CFrame = lookCFrame
-                    else
-                        camera.CFrame = camera.CFrame:Lerp(lookCFrame, 1 / aimSmoothness)
-                    end
+                    fovCircleDraw.Visible = false
                 end
             end
+        end
 
-            function manageAimEngineState()
-                if aimbotEnabled or fovVisible then
-                    if not aimRenderConn then
-                        aimRenderConn = RunService.RenderStepped:Connect(handleAimSystemUpdate)
-                    end
-                    if not inputBeganConn then
-                        inputBeganConn = UserInputService.InputBegan:Connect(function(input, processed)
-                            if input.UserInputType == Enum.UserInputType.MouseButton2 then
-                                isRightClickHolding = true
-                            end
-                        end)
-                    end
-                    if not inputEndedConn then
-                        inputEndedConn = UserInputService.InputEnded:Connect(function(input)
-                            if input.UserInputType == Enum.UserInputType.MouseButton2 then
-                                isRightClickHolding = false
-                            end
-                        end)
-                    end
-                else
-                    if aimRenderConn then
-                        aimRenderConn:Disconnect()
-                        aimRenderConn = nil
-                    end
-                    if inputBeganConn then inputBeganConn:Disconnect(); inputBeganConn = nil end
-                    if inputEndedConn then inputEndedConn:Disconnect(); inputEndedConn = nil end
-                    isRightClickHolding = false
-                    if fovCircleDraw then
-                        fovCircleDraw.Visible = false
-                    end
+        local baseCleanUp = Menu.OnClose or function() end
+        Menu.OnClose = function()
+            aimbotEnabled = false
+            fovVisible = false
+            manageAimEngineState()
+            if fovCircleDraw then pcall(function() fovCircleDraw:Destroy() end) end
+            baseCleanUp()
+        end
+
+        local espData = {}
+        local espRenderConn   = nil
+        local espAddedConn    = nil
+        local espRemovingConn = nil
+
+        local function createAbsoluteLine()
+            local line = Instance.new("Frame")
+            line.BackgroundColor3 = ESP_SKEL_COLOR
+            line.BorderSizePixel   = 0
+            line.ZIndex            = 19
+            line.AnchorPoint       = Vector2.new(0.5, 0.5)
+            line.Visible           = false
+            line.Parent            = ScreenGui
+            return line
+        end
+
+        local function createHeadDot()
+            local dot = Instance.new("Frame")
+            dot.BackgroundColor3 = ESP_SKEL_COLOR
+            dot.BorderSizePixel   = 0
+            dot.ZIndex            = 20
+            dot.AnchorPoint       = Vector2.new(0.5, 0.5)
+            dot.Visible           = false
+            dot.Parent            = ScreenGui
+            
+            local corner = Instance.new("UICorner")
+            corner.CornerRadius = UDim.new(1, 0)
+            corner.Parent = dot
+            return dot
+        end
+
+        local function buildESPFrame(player)
+            local holder = Instance.new("Frame")
+            holder.Name                   = "ESP_" .. player.Name
+            holder.BackgroundTransparency = 1
+            holder.BorderSizePixel        = 0
+            holder.Size                   = UDim2.new(0, 0, 0, 0)
+            holder.ClipsDescendants       = false
+            holder.ZIndex                 = 20
+            holder.Parent                 = ScreenGui
+
+            local function makeLine()
+                local f = Instance.new("Frame")
+                f.BackgroundColor3  = ESP_COLOR
+                f.BorderSizePixel   = 0
+                f.ZIndex            = 21
+                f.Parent            = holder
+                return f
+            end
+
+            local nameTag = Instance.new("TextLabel")
+            nameTag.BackgroundTransparency = 1
+            nameTag.TextColor3             = ESP_NAME_COL
+            nameTag.TextStrokeTransparency = 0.5
+            nameTag.TextStrokeColor3       = Color3.new(0, 0, 0)
+            nameTag.Font                   = Enum.Font.GothamBold
+            nameTag.TextSize               = 11
+            nameTag.Text                   = player.Name
+            nameTag.Size                   = UDim2.new(0, 120, 0, 14)
+            nameTag.TextXAlignment         = Enum.TextXAlignment.Center
+            nameTag.ZIndex                 = 22
+            nameTag.Visible                = false
+            nameTag.Parent                 = ScreenGui
+
+            local bones = {
+                HeadDot          = createHeadDot(),
+                HeadToTorso      = createAbsoluteLine(),
+                TorsoToLeftArm   = createAbsoluteLine(),
+                TorsoToRightArm  = createAbsoluteLine(),
+                LeftArmToForearm = createAbsoluteLine(),  
+                RightArmToForearm= createAbsoluteLine(),  
+                TorsoToLeftLeg   = createAbsoluteLine(),
+                TorsoToRightLeg  = createAbsoluteLine(),
+                LeftLegToShin    = createAbsoluteLine(),
+                RightLegToShin   = createAbsoluteLine(),
+                LowerTorso       = createAbsoluteLine(),
+            }
+
+            return {
+                holder  = holder,
+                top     = makeLine(),
+                bot     = makeLine(),
+                left    = makeLine(),
+                right   = makeLine(),
+                nameTag = nameTag,
+                bones   = bones,
+            }
+        end
+
+        function destroyESPFor(player)
+            local d = espData[player]
+            if not d then return end
+            if d.holder  and d.holder.Parent  then pcall(function() d.holder:Destroy() end) end
+            if d.nameTag and d.nameTag.Parent then pcall(function() d.nameTag:Destroy() end) end
+            if d.bones then
+                for _, object in pairs(d.bones) do
+                    if object and object.Parent then pcall(function() object:Destroy() end) end
                 end
             end
+            espData[player] = nil
+        end
 
-            local baseCleanUp = Menu.OnClose or function() end
-            Menu.OnClose = function()
-                aimbotEnabled = false
-                fovVisible = false
-                manageAimEngineState()
-                if fovCircleDraw then pcall(function() fovCircleDraw:Destroy() end) end
-                baseCleanUp()
+        local function destroyAllESP()
+            for player, _ in pairs(espData) do
+                destroyESPFor(player)
+            end
+            espData = {}
+        end
+
+        local TOP_OFFSET = 3.5   
+        local BOT_OFFSET = 3.2   
+        local WIDTH_RATIO = 0.45 
+
+        local function getScreenBounds(char, camera)
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if not hrp then return nil end
+
+            local distance = (camera.CFrame.Position - hrp.Position).Magnitude
+            if distance > MAX_ESP_DISTANCE then return nil end
+
+            local pos = hrp.Position
+            local topSP = camera:WorldToViewportPoint(pos + Vector3.new(0,  TOP_OFFSET, 0))
+            local botSP = camera:WorldToViewportPoint(pos - Vector3.new(0,  BOT_OFFSET, 0))
+
+            if topSP.Z <= 0 or botSP.Z <= 0 then return nil end
+
+            local topY = math.min(topSP.Y, botSP.Y)
+            local botY = math.max(topSP.Y, botSP.Y)
+            local screenH = botY - topY
+            if screenH < 5 then return nil end  
+
+            local screenW = screenH * WIDTH_RATIO
+            local centerX = (topSP.X + botSP.X) / 2
+
+            local pad = 2
+            return  centerX - screenW / 2 - pad,
+                    topY - pad,
+                    screenW + pad * 2,
+                    screenH + pad * 2
+        end
+
+        local function drawAbsoluteBone3D(lineUI, posA, posB, camera)
+            if not posA or not posB or not skelEspEnabled then 
+                lineUI.Visible = false 
+                return 
             end
 
-            local espData = {}
-            local espRenderConn   = nil
-            local espAddedConn    = nil
-            local espRemovingConn = nil
+            local outA, onScreenA = camera:WorldToViewportPoint(posA)
+            local outB, onScreenB = camera:WorldToViewportPoint(posB)
 
-            local function createAbsoluteLine()
-                local line = Instance.new("Frame")
-                line.BackgroundColor3 = ESP_SKEL_COLOR
-                line.BorderSizePixel   = 0
-                line.ZIndex            = 19
-                line.AnchorPoint       = Vector2.new(0.5, 0.5)
-                line.Visible           = false
-                line.Parent            = ScreenGui
-                return line
-            end
-
-            local function createHeadDot()
-                local dot = Instance.new("Frame")
-                dot.BackgroundColor3 = ESP_SKEL_COLOR
-                dot.BorderSizePixel   = 0
-                dot.ZIndex            = 20
-                dot.AnchorPoint       = Vector2.new(0.5, 0.5)
-                dot.Visible           = false
-                dot.Parent            = ScreenGui
+            if onScreenA and onScreenB and outA.Z > 0 and outB.Z > 0 then
+                local startPos = Vector2.new(outA.X, outA.Y)
+                local endPos = Vector2.new(outB.X, outB.Y)
                 
-                local corner = Instance.new("UICorner")
-                corner.CornerRadius = UDim.new(1, 0)
-                corner.Parent = dot
-                return dot
+                local distance = (endPos - startPos).Magnitude
+                local midpoint = (startPos + endPos) / 2
+
+                lineUI.Size = UDim2.new(0, ESP_THICK, 0, distance)
+                lineUI.Position = UDim2.new(0, midpoint.X, 0, midpoint.Y)
+                
+                local angle = math.atan2(endPos.Y - startPos.Y, endPos.X - startPos.X)
+                lineUI.Rotation = math.deg(angle) - 90
+                lineUI.Visible = true
+            else
+                lineUI.Visible = false
+            end
+        end
+
+        local function drawHeadNode(dotUI, headPart, camera)
+            if not headPart or not skelEspEnabled then
+                dotUI.Visible = false
+                return
             end
 
-            local function buildESPFrame(player)
-                local holder = Instance.new("Frame")
-                holder.Name                   = "ESP_" .. player.Name
-                holder.BackgroundTransparency = 1
-                holder.BorderSizePixel        = 0
-                holder.Size                   = UDim2.new(0, 0, 0, 0)
-                holder.ClipsDescendants       = false
-                holder.ZIndex                 = 20
-                holder.Parent                 = ScreenGui
-
-                local function makeLine()
-                    local f = Instance.new("Frame")
-                    f.BackgroundColor3  = ESP_COLOR
-                    f.BorderSizePixel   = 0
-                    f.ZIndex            = 21
-                    f.Parent            = holder
-                    return f
-                end
-
-                local nameTag = Instance.new("TextLabel")
-                nameTag.BackgroundTransparency = 1
-                nameTag.TextColor3             = ESP_NAME_COL
-                nameTag.TextStrokeTransparency = 0.5
-                nameTag.TextStrokeColor3       = Color3.new(0, 0, 0)
-                nameTag.Font                   = Enum.Font.GothamBold
-                nameTag.TextSize               = 11
-                nameTag.Text                   = player.Name
-                nameTag.Size                   = UDim2.new(0, 120, 0, 14)
-                nameTag.TextXAlignment         = Enum.TextXAlignment.Center
-                nameTag.ZIndex                 = 22
-                nameTag.Visible                = false
-                nameTag.Parent                 = ScreenGui
-
-                local bones = {
-                    HeadDot          = createHeadDot(),
-                    HeadToTorso      = createAbsoluteLine(),
-                    TorsoToLeftArm   = createAbsoluteLine(),
-                    TorsoToRightArm  = createAbsoluteLine(),
-                    LeftArmToForearm = createAbsoluteLine(),  
-                    RightArmToForearm= createAbsoluteLine(),  
-                    TorsoToLeftLeg   = createAbsoluteLine(),
-                    TorsoToRightLeg  = createAbsoluteLine(),
-                    LeftLegToShin    = createAbsoluteLine(),
-                    RightLegToShin   = createAbsoluteLine(),
-                    LowerTorso       = createAbsoluteLine(),
-                }
-
-                return {
-                    holder  = holder,
-                    top     = makeLine(),
-                    bot     = makeLine(),
-                    left    = makeLine(),
-                    right   = makeLine(),
-                    nameTag = nameTag,
-                    bones   = bones,
-                }
+            local out, onScreen = camera:WorldToViewportPoint(headPart.Position)
+            if onScreen and out.Z > 0 then
+                local size = math.clamp(math.round(HEAD_DOT_BASE / out.Z), 6, 45)
+                dotUI.Size = UDim2.new(0, size, 0, size)
+                dotUI.Position = UDim2.new(0, out.X, 0, out.Y)
+                dotUI.Visible = true
+            else
+                dotUI.Visible = false
             end
+        end
 
-            local function destroyESPFor(player)
-                local d = espData[player]
-                if not d then return end
-                if d.holder  and d.holder.Parent  then d.holder:Destroy()  end
-                if d.nameTag and d.nameTag.Parent then d.nameTag:Destroy() end
-                if d.bones then
-                    for _, object in pairs(d.bones) do
-                        if object and object.Parent then object:Destroy() end
-                    end
-                end
-                espData[player] = nil
-            end
-
-            local function destroyAllESP()
-                for player, _ in pairs(espData) do
-                    destroyESPFor(player)
-                end
-                espData = {}
-            end
-
-            local TOP_OFFSET = 3.5   
-            local BOT_OFFSET = 3.2   
-            local WIDTH_RATIO = 0.45 
-
-            local function getScreenBounds(char, camera)
-                local hrp = char:FindFirstChild("HumanoidRootPart")
-                if not hrp then return nil end
-
-                local distance = (camera.CFrame.Position - hrp.Position).Magnitude
-                if distance > MAX_ESP_DISTANCE then return nil end
-
-                local pos = hrp.Position
-                local topSP = camera:WorldToViewportPoint(pos + Vector3.new(0,  TOP_OFFSET, 0))
-                local botSP = camera:WorldToViewportPoint(pos - Vector3.new(0,  BOT_OFFSET, 0))
-
-                if topSP.Z <= 0 or botSP.Z <= 0 then return nil end
-
-                local topY = math.min(topSP.Y, botSP.Y)
-                local botY = math.max(topSP.Y, botSP.Y)
-                local screenH = botY - topY
-                if screenH < 5 then return nil end  
-
-                local screenW = screenH * WIDTH_RATIO
-                local centerX = (topSP.X + botSP.X) / 2
-
-                local pad = 2
-                return  centerX - screenW / 2 - pad,
-                        topY - pad,
-                        screenW + pad * 2,
-                        screenH + pad * 2
-            end
-
-            local function drawAbsoluteBone3D(lineUI, posA, posB, camera)
-                if not posA or not posB or not skelEspEnabled then 
-                    lineUI.Visible = false 
-                    return 
-                end
-
-                local outA, onScreenA = camera:WorldToViewportPoint(posA)
-                local outB, onScreenB = camera:WorldToViewportPoint(posB)
-
-                if onScreenA and onScreenB and outA.Z > 0 and outB.Z > 0 then
-                    local startPos = Vector2.new(outA.X, outA.Y)
-                    local endPos = Vector2.new(outB.X, outB.Y)
-                    
-                    local distance = (endPos - startPos).Magnitude
-                    local midpoint = (startPos + endPos) / 2
-
-                    lineUI.Size = UDim2.new(0, ESP_THICK, 0, distance)
-                    lineUI.Position = UDim2.new(0, midpoint.X, 0, midpoint.Y)
-                    
-                    local angle = math.atan2(endPos.Y - startPos.Y, endPos.X - startPos.X)
-                    lineUI.Rotation = math.deg(angle) - 90
-                    lineUI.Visible = true
-                else
-                    lineUI.Visible = false
+        local function updateESP()
+            local camera = workspace.CurrentCamera
+            if not camera then return end
+            for cachedPlayer, _ in pairs(espData) do
+                if not Players:FindFirstChild(cachedPlayer.Name) then
+                    destroyESPFor(cachedPlayer)
                 end
             end
 
-            local function drawHeadNode(dotUI, headPart, camera)
-                if not headPart or not skelEspEnabled then
-                    dotUI.Visible = false
-                    return
-                end
+            for _, player in pairs(Players:GetPlayers()) do
+                if player == LocalPlayer then continue end
 
-                local out, onScreen = camera:WorldToViewportPoint(headPart.Position)
-                if onScreen and out.Z > 0 then
-                    local size = math.clamp(math.round(HEAD_DOT_BASE / out.Z), 6, 45)
-                    dotUI.Size = UDim2.new(0, size, 0, size)
-                    dotUI.Position = UDim2.new(0, out.X, 0, out.Y)
-                    dotUI.Visible = true
-                else
-                    dotUI.Visible = false
-                end
-            end
-
-            local function updateESP()
-                local camera = workspace.CurrentCamera
-                if not camera then return end
-
-                for _, player in pairs(Players:GetPlayers()) do
-                    if player == LocalPlayer then continue end
-
-                    local char = player.Character
-                    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-
-                    if not char or not hrp then
-                        local d = espData[player]
-                        if d then
-                            d.holder.Visible  = false
-                            d.nameTag.Visible = false
-                            for _, b in pairs(d.bones) do b.Visible = false end
-                        end
-                        continue
-                    end
-
-                    if not espData[player] then
-                        espData[player] = buildESPFrame(player)
-                    end
+                local char = player.Character
+                if not isPlayerAliveAndActive(player) then
                     local d = espData[player]
-
-                    local x, y, w, h = getScreenBounds(char, camera)
-
-                    if not x then
+                    if d then
                         d.holder.Visible  = false
                         d.nameTag.Visible = false
                         for _, b in pairs(d.bones) do b.Visible = false end
-                        continue
                     end
+                    continue
+                end
+
+                if not espData[player] then
+                    espData[player] = buildESPFrame(player)
+                end
+                local d = espData[player]
+
+                local x, y, w, h = getScreenBounds(char, camera)
+
+                if not x then
+                    d.holder.Visible  = false
+                    d.nameTag.Visible = false
+                    for _, b in pairs(d.bones) do b.Visible = false end
+                    continue
+                end
+
+                local t = ESP_THICK
+
+                d.top.BackgroundColor3 = ESP_COLOR
+                d.bot.BackgroundColor3 = ESP_COLOR
+                d.left.BackgroundColor3 = ESP_COLOR
+                d.right.BackgroundColor3 = ESP_COLOR
+                d.nameTag.TextColor3 = ESP_NAME_COL
+
+                for _, boneObj in pairs(d.bones) do
+                    boneObj.BackgroundColor3 = ESP_SKEL_COLOR
+                end
+
+                d.holder.Position = UDim2.new(0, x, 0, y)
+                d.holder.Size     = UDim2.new(0, w, 0, h)
+                d.holder.Visible  = boxEspEnabled
+
+                if boxEspEnabled then
+                    d.top.Position = UDim2.new(0, 0, 0, 0); d.top.Size = UDim2.new(1, 0, 0, t)
+                    d.bot.Position = UDim2.new(0, 0, 1, -t); d.bot.Size = UDim2.new(1, 0, 0, t)
+                    d.left.Position = UDim2.new(0, 0, 0, 0); d.left.Size = UDim2.new(0, t, 1, 0)
+                    d.right.Position = UDim2.new(1, -t, 0, 0); d.right.Size = UDim2.new(0, t, 1, 0)
+                end
+
+                d.nameTag.Position = UDim2.new(0, x + w / 2 - 60, 0, y - 16)
+                d.nameTag.Visible  = nameEspEnabled
+
+                if skelEspEnabled then
+                    local head = char:FindFirstChild("Head")
+                    local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+                    local lowerTorso = char:FindFirstChild("LowerTorso")
+                    
+                    local RigsFolder = char:FindFirstChild("Rigs") or char:FindFirstChild("Limbs")
+                    
+                    local lArm = char:FindFirstChild("Left Arm") or char:FindFirstChild("LeftUpperArm") or (RigsFolder and RigsFolder:FindFirstChild("Left Arm"))
+                    local lForearm = char:FindFirstChild("LeftLowerArm")
+                    local rArm = char:FindFirstChild("Right Arm") or char:FindFirstChild("RightUpperArm") or (RigsFolder and RigsFolder:FindFirstChild("Right Arm"))
+                    local rForearm = char:FindFirstChild("RightLowerArm")
+                    
+                    local lLeg = char:FindFirstChild("Left Leg") or char:FindFirstChild("LeftUpperLeg") or (RigsFolder and RigsFolder:FindFirstChild("Left Leg"))
+                    local lShin = char:FindFirstChild("LeftLowerLeg")
+                    local rLeg = char:FindFirstChild("Right Leg") or char:FindFirstChild("RightUpperLeg") or (RigsFolder and RigsFolder:FindFirstChild("Right Leg"))
+                    local rShin = char:FindFirstChild("RightLowerLeg")
+
+                    drawHeadNode(d.bones.HeadDot, head, camera)
+
+                    if head and torso then
+                        drawAbsoluteBone3D(d.bones.HeadToTorso, head.Position, torso.Position, camera)
+
+                        if lowerTorso then
+                            drawAbsoluteBone3D(d.bones.LowerTorso, torso.Position, lowerTorso.Position, camera)
+                            if lArm     then drawAbsoluteBone3D(d.bones.TorsoToLeftArm, torso.Position, lArm.Position, camera) end
+                            if lForearm then drawAbsoluteBone3D(d.bones.LeftArmToForearm, lArm.Position, lForearm.Position, camera) end
+                            if rArm     then drawAbsoluteBone3D(d.bones.TorsoToRightArm, torso.Position, rArm.Position, camera) end
+                            if rForearm then drawAbsoluteBone3D(d.bones.RightArmToForearm, rArm.Position, rForearm.Position, camera) end
+                            if lLeg  then drawAbsoluteBone3D(d.bones.TorsoToLeftLeg, lowerTorso.Position, lLeg.Position, camera) end
+                            if lShin then drawAbsoluteBone3D(d.bones.LeftLegToShin, lLeg.Position, lShin.Position, camera) end
+                            if rLeg  then drawAbsoluteBone3D(d.bones.TorsoToRightLeg, lowerTorso.Position, rLeg.Position, camera) end
+                            if rShin then drawAbsoluteBone3D(d.bones.RightLegToShin, rLeg.Position, rShin.Position, camera) end
+                        else
+                            d.bones.LowerTorso.Visible = false
+                            
+                            if lArm then
+                                local armTop = lArm.Position + Vector3.new(0, 1, 0)
+                                local armBot = lArm.Position - Vector3.new(0, 1.4, 0)
+                                drawAbsoluteBone3D(d.bones.TorsoToLeftArm, torso.Position + Vector3.new(-1, 1, 0), armTop, camera)
+                                drawAbsoluteBone3D(d.bones.LeftArmToForearm, armTop, armBot, camera)
+                            end
+                            if rArm then
+                                local armTop = rArm.Position + Vector3.new(0, 1, 0)
+                                local armBot = rArm.Position - Vector3.new(0, 1.4, 0)
+                                drawAbsoluteBone3D(d.bones.TorsoToRightArm, torso.Position + Vector3.new(1, 1, 0), armTop, camera)
+                                drawAbsoluteBone3D(d.bones.RightArmToForearm, armTop, armBot, camera)
+                            end
+                            if lLeg then
+                                local legTop = lLeg.Position + Vector3.new(0, 1, 0)
+                                local legBot = lLeg.Position - Vector3.new(0, 1.2, 0)
+                                drawAbsoluteBone3D(d.bones.TorsoToLeftLeg, torso.Position + Vector3.new(-0.5, -1, 0), legTop, camera)
+                                drawAbsoluteBone3D(d.bones.LeftLegToShin, legTop, legBot, camera)
+                            end
+                            if rLeg then
+                                local legTop = rLeg.Position + Vector3.new(0, 1, 0)
+                                local legBot = rLeg.Position - Vector3.new(0, 1.2, 0)
+                                drawAbsoluteBone3D(d.bones.TorsoToRightLeg, torso.Position + Vector3.new(0.5, -1, 0), legTop, camera)
+                                drawAbsoluteBone3D(d.bones.RightLegToShin, legTop, legBot, camera)
+                            end
+                        end
+                    end
+                else
+                    for _, b in pairs(d.bones) do b.Visible = false end
+                end
+            end
+        end
+
+        function manageESPState()
+            if boxEspEnabled or nameEspEnabled or skelEspEnabled then
+                if not espRenderConn then
+                    espRenderConn = RunService.RenderStepped:Connect(updateESP)
+                end
+                if not espAddedConn then
+                    espAddedConn = Players.PlayerAdded:Connect(function(p) end)
+                end
+                if not espRemovingConn then
+                    espRemovingConn = Players.PlayerRemoving:Connect(function(p)
+                        destroyESPFor(p)
+                    end)
+                end
+            else
+                if espRenderConn   then espRenderConn:Disconnect(); espRenderConn   = nil end
+                if espAddedConn    then espAddedConn:Disconnect(); espAddedConn    = nil end
+                if espRemovingConn then espRemovingConn:Disconnect(); espRemovingConn = nil end
+                destroyAllESP()
+            end
+        end
+    end
+},
+
+[122446657157717] = {
+    name = "Sniper Arena",
+    placeId = 122446657157717,
+    universeId = 9534705677,
+    callback = function()
+        local Menu = CreateGameMenu()
+        
+        local CombatTab   = Menu.CreateTab("Combat")
+        local VisualsTab  = Menu.CreateTab("Visuals")
+        -- local MovementTab = Menu.CreateTab("Movement")
+        local SettingsTab = Menu.CreateTab("Settings")
+        -- local ConfigsTab  = Menu.CreateTab("Configs")
+        
+        local Players = game:GetService("Players")
+        local RunService = game:GetService("RunService")
+        local UserInputService = game:GetService("UserInputService")
+        local HttpService = game:GetService("HttpService")
+        local LocalPlayer = Players.LocalPlayer
+
+        local aimbotEnabled      = false
+        local triggerbotEnabled   = false
+        local wallCheckEnabled    = true
+        local teamCheckEnabled    = true
+        local aimSmoothness      = 5
+        local aimRadius          = 150
+        local fovVisible         = false
+        local aimTargetPart      = "Head"
+    
+        local lastRightClickTime = 0
+        local triggerbotDelay    = 0.12
+
+        local ESP_THICK        = 2
+        local MAX_ESP_DISTANCE = 1000
+        local boxEspEnabled    = false
+        local nameEspEnabled   = false
+
+        local COLOR_PRESETS = {
+            {name = "Crimson Red", color = Color3.fromRGB(255, 50, 50)},
+            {name = "Neon Mint",   color = Color3.fromRGB(0, 255, 140)},
+            {name = "Deep Blue",   color = Color3.fromRGB(0, 160, 255)},
+            {name = "Pure White",  color = Color3.fromRGB(255, 255, 255)}
+        }
+
+        local boxColorIdx  = 1 
+        local nameColorIdx = 4 
+        local ESP_COLOR      = COLOR_PRESETS[boxColorIdx].color
+        local ESP_NAME_COL   = COLOR_PRESETS[nameColorIdx].color
+
+        local mainRenderConn  = nil
+        local inputBeganConn  = nil
+        local fovCircleDraw   = nil
+        local espRenderConn   = nil
+        local espData         = {}
+
+        local flyEnabled       = false
+        local flySpeed         = 25
+        local noclipEnabled     = false
+        local walkSpeedEnabled  = false
+        local customWalkSpeed   = 35
+        local jumpPowerEnabled  = false
+        local customJumpPower   = 50
+        
+        local movementConn     = nil 
+        local flyBodyVel       = nil
+        local flyBodyGyro      = nil
+        local charAddedConn    = nil
+        local spawnGracePeriod = false
+
+        local FILE_NAME = "SniperArena_Config.json"
+        local function isPlayerAliveAndActive(player)
+            if not player or player == LocalPlayer then return false end
+            
+            if player.Team and (player.Team.Name:lower():find("spectat") or player.Team.Name:lower():find("dead") or player.Team.Name:lower():find("lobby")) then 
+                return false 
+            end
+
+            if player:GetAttribute("Spectating") == true or player:GetAttribute("IsDead") == true or player:GetAttribute("Spectator") == true then
+                return false
+            end
+            if player:FindFirstChild("Spectating") or player:FindFirstChild("IsSpectating") or player:FindFirstChild("Spectator") then
+                return false
+            end
+            
+            local char = player.Character
+            if not char or not char:IsDescendantOf(workspace) then return false end
+            
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if not hum or hum.Health <= 0 then return false end
+            
+            local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head")
+            if not hrp then return false end
+
+            if hrp.Position.Y < -500 or (workspace.CurrentCamera and (hrp.Position - workspace.CurrentCamera.CFrame.Position).Magnitude < 2) then
+                return false
+            end
+
+            local head = char:FindFirstChild("Head")
+            if head and head:IsA("BasePart") and head.Transparency >= 0.9 then
+                return false
+            end
+            
+            return true
+        end
+
+ 
+        local function updateMovement(loopTime, deltaTime)
+            if spawnGracePeriod then return end
+
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if not hrp or not hum then return end
+
+            if walkSpeedEnabled and not flyEnabled then
+                hum.WalkSpeed = customWalkSpeed
+            end
+
+            if jumpPowerEnabled then
+                hum.UseJumpPower = true
+                hum.JumpPower = customJumpPower
+            end
+
+            if noclipEnabled then
+                hum:ChangeState(Enum.HumanoidStateType.NoClip)
+                for _, part in ipairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = false
+                    end
+                end
+            end
+
+            if flyEnabled then
+                if not flyBodyVel or flyBodyVel.Parent ~= hrp then
+                    pcall(function() if flyBodyVel then flyBodyVel:Destroy() end end)
+                    flyBodyVel = Instance.new("BodyVelocity")
+                    flyBodyVel.Name = "StabilizedFlightVelocity"
+                    flyBodyVel.Parent = hrp
+                end
+                
+                if not flyBodyGyro or flyBodyGyro.Parent ~= hrp then
+                    pcall(function() if flyBodyGyro then flyBodyGyro:Destroy() end end)
+                    flyBodyGyro = Instance.new("BodyGyro")
+                    flyBodyGyro.Name = "StabilizedFlightGyro"
+                    flyBodyGyro.Parent = hrp
+                end
+
+                flyBodyVel.MaxForce = Vector3.new(4e5, 4e5, 4e5)
+                flyBodyGyro.MaxTorque = Vector3.new(4e5, 4e5, 4e5)
+
+                local camera = workspace.CurrentCamera
+                if camera then 
+                    flyBodyGyro.CFrame = camera.CFrame 
+                end
+
+                local moveDir = Vector3.zero
+                
+                if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+                    moveDir = moveDir + camera.CFrame.LookVector
+                end
+                if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+                    moveDir = moveDir - camera.CFrame.LookVector
+                end
+                if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+                    moveDir = moveDir - camera.CFrame.RightVector
+                end
+                if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+                    moveDir = moveDir + camera.CFrame.RightVector
+                end
+                if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+                    moveDir = moveDir + Vector3.new(0, 1, 0)
+                end
+                if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
+                    moveDir = moveDir - Vector3.new(0, 1, 0)
+                end
+
+                if moveDir.Magnitude > 0 then
+                    flyBodyVel.Velocity = moveDir.Unit * flySpeed
+                else
+                    flyBodyVel.Velocity = Vector3.zero
+                end
+
+                if hum.CurrentStateType ~= Enum.HumanoidStateType.Physics then
+                    hum:ChangeState(Enum.HumanoidStateType.Physics)
+                end
+            end
+        end
+
+        local function manageMovementState()
+            local char = LocalPlayer.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+
+            if flyEnabled or noclipEnabled or walkSpeedEnabled or jumpPowerEnabled then
+                if not movementConn then
+                    movementConn = RunService.Stepped:Connect(updateMovement)
+                end
+                
+                if not charAddedConn then
+                    charAddedConn = LocalPlayer.CharacterAdded:Connect(function(newChar)
+                        spawnGracePeriod = true
+                        
+                        if flyBodyVel then pcall(function() flyBodyVel:Destroy() end); flyBodyVel = nil end
+                        if flyBodyGyro then pcall(function() flyBodyGyro:Destroy() end); flyBodyGyro = nil end
+                        
+                        task.wait(2.5)
+                        spawnGracePeriod = false
+                    end)
+                end
+            else
+                if movementConn then
+                    movementConn:Disconnect()
+                    movementConn = nil
+                end
+                if charAddedConn then
+                    charAddedConn:Disconnect()
+                    charAddedConn = nil
+                end
+            end
+
+            if not flyEnabled then
+                if flyBodyVel then pcall(function() flyBodyVel:Destroy() end); flyBodyVel = nil end
+                if flyBodyGyro then pcall(function() flyBodyGyro:Destroy() end); flyBodyGyro = nil end
+                if hum then 
+                    hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+                    if not walkSpeedEnabled then hum.WalkSpeed = 16 end
+                end
+            end
+        end
+
+        local function toggleFly(s) flyEnabled = s; manageMovementState() end
+        local function toggleNoclip(s) noclipEnabled = s; manageMovementState() end
+        local function toggleWalkSpeed(s) walkSpeedEnabled = s; manageMovementState() end
+        local function toggleJumpPower(s) jumpPowerEnabled = s; manageMovementState() end
+
+        local function saveConfig()
+            local configData = {
+                aimbotEnabled = aimbotEnabled,
+                triggerbotEnabled = triggerbotEnabled,
+                wallCheckEnabled = wallCheckEnabled,
+                teamCheckEnabled = teamCheckEnabled,
+                aimSmoothness = aimSmoothness,
+                aimRadius = aimRadius,
+                fovVisible = fovVisible,
+                aimTargetPart = aimTargetPart,
+                triggerbotDelay = triggerbotDelay,
+                ESP_THICK = ESP_THICK,
+                MAX_ESP_DISTANCE = MAX_ESP_DISTANCE,
+                boxEspEnabled = boxEspEnabled,
+                nameEspEnabled = nameEspEnabled,
+                flyEnabled = flyEnabled,
+                flySpeed = flySpeed,
+                noclipEnabled = noclipEnabled,
+                walkSpeedEnabled = walkSpeedEnabled,
+                customWalkSpeed = customWalkSpeed,
+                jumpPowerEnabled = jumpPowerEnabled,
+                customJumpPower = customJumpPower
+            }
+            
+            local success, jsonString = pcall(function()
+                return HttpService:JSONEncode(configData)
+            end)
+            
+            if success and writefile then
+                writefile(FILE_NAME, jsonString)
+            end
+        end
+
+        local function loadConfig()
+            if not readfile or not isfile or not isfile(FILE_NAME) then return end
+            
+            local fileContent = readfile(FILE_NAME)
+            local success, configData = pcall(function()
+                return HttpService:JSONDecode(fileContent)
+            end)
+            
+            if success and configData then
+                if configData.aimbotEnabled ~= nil then aimbotEnabled = configData.aimbotEnabled end
+                if configData.triggerbotEnabled ~= nil then triggerbotEnabled = configData.triggerbotEnabled end
+                if configData.wallCheckEnabled ~= nil then wallCheckEnabled = configData.wallCheckEnabled end
+                if configData.teamCheckEnabled ~= nil then teamCheckEnabled = configData.teamCheckEnabled end
+                if configData.aimSmoothness ~= nil then aimSmoothness = configData.aimSmoothness end
+                if configData.aimRadius ~= nil then aimRadius = configData.aimRadius end
+                if configData.fovVisible ~= nil then fovVisible = configData.fovVisible end
+                if configData.aimTargetPart ~= nil then aimTargetPart = configData.aimTargetPart end
+                if configData.triggerbotDelay ~= nil then triggerbotDelay = configData.triggerbotDelay end
+                if configData.ESP_THICK ~= nil then ESP_THICK = configData.ESP_THICK end
+                if configData.MAX_ESP_DISTANCE ~= nil then MAX_ESP_DISTANCE = configData.MAX_ESP_DISTANCE end
+                if configData.boxEspEnabled ~= nil then boxEspEnabled = configData.boxEspEnabled end
+                if configData.nameEspEnabled ~= nil then nameEspEnabled = configData.nameEspEnabled end
+                if configData.flyEnabled ~= nil then flyEnabled = configData.flyEnabled end
+                if configData.flySpeed ~= nil then flySpeed = configData.flySpeed end
+                if configData.noclipEnabled ~= nil then noclipEnabled = configData.noclipEnabled end
+                if configData.walkSpeedEnabled ~= nil then walkSpeedEnabled = configData.walkSpeedEnabled end
+                if configData.customWalkSpeed ~= nil then customWalkSpeed = configData.customWalkSpeed end
+                if configData.jumpPowerEnabled ~= nil then jumpPowerEnabled = configData.jumpPowerEnabled end
+                if configData.customJumpPower ~= nil then customJumpPower = configData.customJumpPower end
+            
+                manageConnections()
+                manageESPState()
+                manageMovementState()
+            end
+        end
+
+        pcall(function()
+            if Drawing and Drawing.new then
+                fovCircleDraw = Drawing.new("Circle")
+                fovCircleDraw.Thickness = 1
+                fovCircleDraw.NumSides = 60
+                fovCircleDraw.Filled = false
+                fovCircleDraw.Color = Color3.fromRGB(255, 255, 255)
+                fovCircleDraw.Visible = false
+            end
+        end)
+
+        function getClosestPlayerInstance()
+            local target = nil
+            local shortestDistance = math.huge
+            local camera = workspace.CurrentCamera
+            if not camera then return nil end
+            
+            local mouseLocation = UserInputService:GetMouseLocation()
+
+            for _, player in pairs(Players:GetPlayers()) do
+                if not isPlayerAliveAndActive(player) then continue end
+                if teamCheckEnabled and player.Team == LocalPlayer.Team then continue end
+
+                local char = player.Character
+                local part = char:FindFirstChild(aimTargetPart)
+
+                if part then
+                    local screenPos, onScreen = camera:WorldToViewportPoint(part.Position)
+                    if onScreen then
+                        local distance = (Vector2.new(screenPos.X, screenPos.Y) - mouseLocation).Magnitude
+                        if distance < shortestDistance and distance <= aimRadius then
+                            
+                            if wallCheckEnabled then
+                                local raycastParams = RaycastParams.new()
+                                raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+                                raycastParams.FilterDescendantsInstances = {LocalPlayer.Character, char, camera}
+                                raycastParams.IgnoreWater = true
+                                
+                                local rayResult = workspace:Raycast(camera.CFrame.Position, part.Position - camera.CFrame.Position, raycastParams)
+                                if rayResult and rayResult.Instance and not rayResult.Instance:IsDescendantOf(char) then 
+                                    continue 
+                                end
+                            end
+
+                            target = part
+                            shortestDistance = distance
+                        end
+                    end
+                end
+            end
+            return target
+        end
+
+        function getClosestPlayerScreen()
+            local targetPart = getClosestPlayerInstance()
+            if targetPart then
+                local camera = workspace.CurrentCamera
+                local screenPos, _ = camera:WorldToViewportPoint(targetPart.Position)
+                return screenPos
+            end
+            return nil
+        end
+
+        function systemUpdate()
+            local camera = workspace.CurrentCamera
+            if not camera then return end
+
+            if fovCircleDraw then
+                fovCircleDraw.Position = UserInputService:GetMouseLocation()
+                fovCircleDraw.Radius = aimRadius
+                fovCircleDraw.Visible = fovVisible
+            end
+
+            local isRightClickActive = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
+
+            if aimbotEnabled and isRightClickActive then
+                local targetScreenPos = getClosestPlayerScreen()
+                if targetScreenPos and mousemoverel then
+                    local mouseLocation = UserInputService:GetMouseLocation()
+                    local deltaX = (targetScreenPos.X - mouseLocation.X) / aimSmoothness
+                    local deltaY = (targetScreenPos.Y - mouseLocation.Y) / aimSmoothness
+                    mousemoverel(deltaX, deltaY)
+                end
+            end
+
+            if triggerbotEnabled and isRightClickActive then
+                if (os.clock() - lastRightClickTime) > 0.25 then
+                    local mouseLocation = UserInputService:GetMouseLocation()
+                    local unitRay = camera:ViewportPointToRay(mouseLocation.X, mouseLocation.Y)
+                    
+                    local rayParams = RaycastParams.new()
+                    rayParams.FilterType = Enum.RaycastFilterType.Exclude
+                    rayParams.FilterDescendantsInstances = {LocalPlayer.Character, camera}
+                    
+                    local rayResult = workspace:Raycast(unitRay.Origin, unitRay.Direction * 5000, rayParams)
+                    if rayResult and rayResult.Instance then
+                        local targetChar = rayResult.Instance:FindFirstAncestorOfClass("Model")
+                        if targetChar then
+                            local targetPlr = Players:GetPlayerFromCharacter(targetChar)
+                           
+                            if targetPlr and isPlayerAliveAndActive(targetPlr) then
+                                if not (teamCheckEnabled and targetPlr.Team == LocalPlayer.Team) then
+                                    mouse1press()
+                                    task.wait(0.02)
+                                    mouse1release()
+                                    task.wait(triggerbotDelay)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        function manageConnections()
+            if aimbotEnabled or fovVisible or triggerbotEnabled then
+                if not mainRenderConn then
+                    mainRenderConn = RunService.RenderStepped:Connect(systemUpdate)
+                end
+                if not inputBeganConn then
+                    inputBeganConn = UserInputService.InputBegan:Connect(function(input, processed)
+                        if not processed and input.UserInputType == Enum.UserInputType.MouseButton2 then
+                            lastRightClickTime = os.clock()
+                        end
+                    end)
+                end
+            else
+                if mainRenderConn then mainRenderConn:Disconnect(); mainRenderConn = nil end
+                if inputBeganConn then inputBeganConn:Disconnect(); inputBeganConn = nil end
+                if fovCircleDraw then fovCircleDraw.Visible = false end
+            end
+        end
+
+        function buildESPFrame(player)
+            local holder = Instance.new("Frame")
+            holder.Name = "ESP_" .. player.Name
+            holder.BackgroundTransparency = 1
+            holder.BorderSizePixel = 0
+            holder.Size = UDim2.new(0, 0, 0, 0)
+            holder.Parent = ScreenGui
+
+            local function makeLine()
+                local f = Instance.new("Frame")
+                f.BackgroundColor3 = ESP_COLOR
+                f.BorderSizePixel = 0
+                f.ZIndex = 21
+                f.Parent = holder
+                return f
+            end
+
+            local nameTag = Instance.new("TextLabel")
+            nameTag.BackgroundTransparency = 1
+            nameTag.TextColor3 = ESP_NAME_COL
+            nameTag.TextStrokeTransparency = 0.5
+            nameTag.Font = Enum.Font.GothamBold
+            nameTag.TextSize = 11
+            nameTag.Text = player.Name
+            nameTag.Size = UDim2.new(0, 120, 0, 14)
+            nameTag.TextXAlignment = Enum.TextXAlignment.Center
+            nameTag.ZIndex = 22
+            nameTag.Visible = false
+            nameTag.Parent = ScreenGui
+
+            return {
+                holder = holder,
+                top = makeLine(),
+                bot = makeLine(),
+                left = makeLine(),
+                right = makeLine(),
+                nameTag = nameTag
+            }
+        end
+
+        function destroyESPFor(player)
+            local d = espData[player]
+            if not d then return end
+            if d.holder  and d.holder.Parent  then d.holder:Destroy()  end
+            if d.nameTag and d.nameTag.Parent then d.nameTag:Destroy() end
+            espData[player] = nil
+        end
+
+        function updateESP()
+            local camera = workspace.CurrentCamera
+            if not camera then return end
+
+            for cachedPlayer, _ in pairs(espData) do
+                if not Players:FindFirstChild(cachedPlayer.Name) then
+                    destroyESPFor(cachedPlayer)
+                end
+            end
+
+            for _, player in pairs(Players:GetPlayers()) do
+                if player == LocalPlayer then continue end
+
+                if not isPlayerAliveAndActive(player) then
+                    local d = espData[player]
+                    if d then
+                        d.holder.Visible = false
+                        d.nameTag.Visible = false
+                    end
+                    continue
+                end
+
+                local char = player.Character
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+
+                if not espData[player] then espData[player] = buildESPFrame(player) end
+                local d = espData[player]
+
+                local pos = hrp.Position
+                local distance = (camera.CFrame.Position - pos).Magnitude
+                if distance > MAX_ESP_DISTANCE then
+                    d.holder.Visible = false
+                    d.nameTag.Visible = false
+                    continue
+                end
+
+                local topSP = camera:WorldToViewportPoint(pos + Vector3.new(0, 3.5, 0))
+                local botSP = camera:WorldToViewportPoint(pos - Vector3.new(0, 3.2, 0))
+
+                if topSP.Z > 0 and botSP.Z > 0 then
+                    local topY = math.min(topSP.Y, botSP.Y)
+                    local botY = math.max(topSP.Y, botSP.Y)
+                    local h = botY - topY
+                    local w = h * 0.45
+                    local x = (topSP.X + botSP.X) / 2 - (w / 2)
 
                     local t = ESP_THICK
-
                     d.top.BackgroundColor3 = ESP_COLOR
                     d.bot.BackgroundColor3 = ESP_COLOR
                     d.left.BackgroundColor3 = ESP_COLOR
                     d.right.BackgroundColor3 = ESP_COLOR
                     d.nameTag.TextColor3 = ESP_NAME_COL
 
-                    for _, boneObj in pairs(d.bones) do
-                        boneObj.BackgroundColor3 = ESP_SKEL_COLOR
-                    end
-
-                    d.holder.Position = UDim2.new(0, x, 0, y)
-                    d.holder.Size     = UDim2.new(0, w, 0, h)
-                    d.holder.Visible  = boxEspEnabled
+                    d.holder.Position = UDim2.new(0, x, 0, topY)
+                    d.holder.Size = UDim2.new(0, w, 0, h)
+                    d.holder.Visible = boxEspEnabled
 
                     if boxEspEnabled then
-                        d.top.Position = UDim2.new(0, 0, 0, 0); d.top.Size = UDim2.new(1, 0, 0, t)
-                        d.bot.Position = UDim2.new(0, 0, 1, -t); d.bot.Size = UDim2.new(1, 0, 0, t)
-                        d.left.Position = UDim2.new(0, 0, 0, 0); d.left.Size = UDim2.new(0, t, 1, 0)
-                        d.right.Position = UDim2.new(1, -t, 0, 0); d.right.Size = UDim2.new(0, t, 1, 0)
+                        d.top.Size = UDim2.new(1, 0, 0, t); d.top.Position = UDim2.new(0, 0, 0, 0)
+                        d.bot.Size = UDim2.new(1, 0, 0, t); d.bot.Position = UDim2.new(0, 0, 1, -t)
+                        d.left.Size = UDim2.new(0, t, 1, 0); d.left.Position = UDim2.new(0, 0, 0, 0)
+                        d.right.Size = UDim2.new(0, t, 1, 0); d.right.Position = UDim2.new(1, -t, 0, 0)
                     end
 
-                    d.nameTag.Position = UDim2.new(0, x + w / 2 - 60, 0, y - 16)
-                    d.nameTag.Visible  = nameEspEnabled
-
-                    if skelEspEnabled then
-                        local head = char:FindFirstChild("Head")
-                        local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
-                        local lowerTorso = char:FindFirstChild("LowerTorso")
-                        
-                        local RigsFolder = char:FindFirstChild("Rigs") or char:FindFirstChild("Limbs")
-                        
-                        local lArm = char:FindFirstChild("Left Arm") or char:FindFirstChild("LeftUpperArm") or (RigsFolder and RigsFolder:FindFirstChild("Left Arm"))
-                        local lForearm = char:FindFirstChild("LeftLowerArm")
-                        local rArm = char:FindFirstChild("Right Arm") or char:FindFirstChild("RightUpperArm") or (RigsFolder and RigsFolder:FindFirstChild("Right Arm"))
-                        local rForearm = char:FindFirstChild("RightLowerArm")
-                        
-                        local lLeg = char:FindFirstChild("Left Leg") or char:FindFirstChild("LeftUpperLeg") or (RigsFolder and RigsFolder:FindFirstChild("Left Leg"))
-                        local lShin = char:FindFirstChild("LeftLowerLeg")
-                        local rLeg = char:FindFirstChild("Right Leg") or char:FindFirstChild("RightUpperLeg") or (RigsFolder and RigsFolder:FindFirstChild("Right Leg"))
-                        local rShin = char:FindFirstChild("RightLowerLeg")
-
-                        drawHeadNode(d.bones.HeadDot, head, camera)
-
-                        if head and torso then
-                            drawAbsoluteBone3D(d.bones.HeadToTorso, head.Position, torso.Position, camera)
-
-                            if lowerTorso then
-                                drawAbsoluteBone3D(d.bones.LowerTorso, torso.Position, lowerTorso.Position, camera)
-                                if lArm     then drawAbsoluteBone3D(d.bones.TorsoToLeftArm, torso.Position, lArm.Position, camera) end
-                                if lForearm then drawAbsoluteBone3D(d.bones.LeftArmToForearm, lArm.Position, lForearm.Position, camera) end
-                                if rArm     then drawAbsoluteBone3D(d.bones.TorsoToRightArm, torso.Position, rArm.Position, camera) end
-                                if rForearm then drawAbsoluteBone3D(d.bones.RightArmToForearm, rArm.Position, rForearm.Position, camera) end
-                                if lLeg  then drawAbsoluteBone3D(d.bones.TorsoToLeftLeg, lowerTorso.Position, lLeg.Position, camera) end
-                                if lShin then drawAbsoluteBone3D(d.bones.LeftLegToShin, lLeg.Position, lShin.Position, camera) end
-                                if rLeg  then drawAbsoluteBone3D(d.bones.TorsoToRightLeg, lowerTorso.Position, rLeg.Position, camera) end
-                                if rShin then drawAbsoluteBone3D(d.bones.RightLegToShin, rLeg.Position, rShin.Position, camera) end
-                            else
-                                d.bones.LowerTorso.Visible = false
-                                
-                                if lArm then
-                                    local armTop = lArm.Position + Vector3.new(0, 1, 0)
-                                    local armBot = lArm.Position - Vector3.new(0, 1.4, 0)
-                                    drawAbsoluteBone3D(d.bones.TorsoToLeftArm, torso.Position + Vector3.new(-1, 1, 0), armTop, camera)
-                                    drawAbsoluteBone3D(d.bones.LeftArmToForearm, armTop, armBot, camera)
-                                end
-                                if rArm then
-                                    local armTop = rArm.Position + Vector3.new(0, 1, 0)
-                                    local armBot = rArm.Position - Vector3.new(0, 1.4, 0)
-                                    drawAbsoluteBone3D(d.bones.TorsoToRightArm, torso.Position + Vector3.new(1, 1, 0), armTop, camera)
-                                    drawAbsoluteBone3D(d.bones.RightArmToForearm, armTop, armBot, camera)
-                                end
-                                if lLeg then
-                                    local legTop = lLeg.Position + Vector3.new(0, 1, 0)
-                                    local legBot = lLeg.Position - Vector3.new(0, 1.2, 0)
-                                    drawAbsoluteBone3D(d.bones.TorsoToLeftLeg, torso.Position + Vector3.new(-0.5, -1, 0), legTop, camera)
-                                    drawAbsoluteBone3D(d.bones.LeftLegToShin, legTop, legBot, camera)
-                                end
-                                if rLeg then
-                                    local legTop = rLeg.Position + Vector3.new(0, 1, 0)
-                                    local legBot = rLeg.Position - Vector3.new(0, 1.2, 0)
-                                    drawAbsoluteBone3D(d.bones.TorsoToRightLeg, torso.Position + Vector3.new(0.5, -1, 0), legTop, camera)
-                                    drawAbsoluteBone3D(d.bones.RightLegToShin, legTop, legBot, camera)
-                                end
-                            end
-                        end
-                    else
-                        for _, b in pairs(d.bones) do b.Visible = false end
-                    end
-                end
-            end
-
-            function manageESPState()
-                if boxEspEnabled or nameEspEnabled or skelEspEnabled then
-                    if not espRenderConn then
-                        espRenderConn = RunService.RenderStepped:Connect(updateESP)
-                    end
-                    if not espAddedConn then
-                        espAddedConn = Players.PlayerAdded:Connect(function(p) end)
-                    end
-                    if not espRemovingConn then
-                        espRemovingConn = Players.PlayerRemoving:Connect(function(p)
-                            destroyESPFor(p)
-                        end)
-                    end
+                    d.nameTag.Position = UDim2.new(0, x + (w / 2) - 60, 0, topY - 16)
+                    d.nameTag.Visible = nameEspEnabled
                 else
-                    if espRenderConn   then espRenderConn:Disconnect();   espRenderConn   = nil end
-                    if espAddedConn    then espAddedConn:Disconnect();    espAddedConn    = nil end
-                    if espRemovingConn then espRemovingConn:Disconnect(); espRemovingConn = nil end
-                    destroyAllESP()
+                    d.holder.Visible = false
+                    d.nameTag.Visible = false
                 end
             end
         end
-    },
 
-[122446657157717] = {
-    name = "Sniper Arena",
-    placeId = 122446657157717,
+        function manageESPState()
+            if boxEspEnabled or nameEspEnabled then
+                if not espRenderConn then espRenderConn = RunService.RenderStepped:Connect(updateESP) end
+            else
+                if espRenderConn then espRenderConn:Disconnect(); espRenderConn = nil end
+                for player, _ in pairs(espData) do destroyESPFor(player) end
+                espData = {}
+            end
+        end
+
+        Menu.AddHeader(CombatTab, "Aim")
+        Menu.AddToggle(CombatTab, "Enable Aimbot", false, function(s) aimbotEnabled = s; manageConnections() end)
+        Menu.AddToggle(CombatTab, "Enable Right-Click Triggerbot", false, function(s) triggerbotEnabled = s; manageConnections() end)
+        Menu.AddToggle(CombatTab, "Team Check", true, function(s) teamCheckEnabled = s end)
+        Menu.AddToggle(CombatTab, "Wall Check", true, function(s) wallCheckEnabled = s end)
+        Menu.AddToggle(CombatTab, "Show FOV Circle", false, function(s) fovVisible = s; manageConnections() end)
+        
+        Menu.AddHeader(CombatTab, "Target Selection")
+        for _, part in ipairs({"Head", "HumanoidRootPart", "UpperTorso"}) do
+            Menu.AddButton(CombatTab, "Aim Target: " .. part, function() aimTargetPart = part end)
+        end
+        Menu.AddSlider(CombatTab, "FOV Radius", 30, 500, aimRadius, function(v) aimRadius = v end)
+        Menu.AddSlider(CombatTab, "Aimbot Smoothness (Lower=Faster)", 1, 20, aimSmoothness, function(v) aimSmoothness = v end)
+
+        Menu.AddHeader(VisualsTab, "ESP")
+        Menu.AddToggle(VisualsTab, "2D Box ESP", false, function(state) boxEspEnabled = state; manageESPState() end)
+        Menu.AddToggle(VisualsTab, "Name ESP", false, function(state) nameEspEnabled = state; manageESPState() end)
+
+--[[
+        Menu.AddHeader(MovementTab, "Movement Options")
+        Menu.AddToggle(MovementTab, "Flight Toggle (Stabilized)", false, toggleFly)
+        Menu.AddSlider(MovementTab, "Flight Mode Velocity Speed", 10, 150, flySpeed, function(v) flySpeed = v end)
+        Menu.AddToggle(MovementTab, "Global Object Noclip", false, toggleNoclip)
+        Menu.AddToggle(MovementTab, "Custom WalkSpeed Modifier", false, toggleWalkSpeed)
+        Menu.AddSlider(MovementTab, "WalkSpeed Intensity", 16, 3000, customWalkSpeed, function(v) customWalkSpeed = v end)
+        Menu.AddToggle(MovementTab, "Custom JumpPower Modifier", false, toggleJumpPower)
+        Menu.AddSlider(MovementTab, "JumpPower Intensity", 50, 3000, customJumpPower, function(v) customJumpPower = v end)
+]]
+        Menu.AddHeader(SettingsTab, "ESP Configuration")
+        Menu.AddSlider(SettingsTab, "Line Thickness (px)", 1, 6, ESP_THICK, function(val) ESP_THICK = val end)
+        Menu.AddSlider(SettingsTab, "Max Render Distance", 100, 3000, MAX_ESP_DISTANCE, function(val) MAX_ESP_DISTANCE = val end)
+        -- Menu.AddSlider(SettingsTab, "Triggerbot Delay (Seconds)", 0.01, 1.00, triggerbotDelay, function(val) triggerbotDelay = val end)
+
+        --Menu.AddHeader(ConfigsTab, "Profile Management")
+        --Menu.AddButton(ConfigsTab, "Save Profile Slot", saveConfig)
+        --Menu.AddButton(ConfigsTab, "Load Profile Slot", loadConfig)
+
+        local oldClose = Menu.OnClose or function() end
+        Menu.OnClose = function()
+            aimbotEnabled = false; triggerbotEnabled = false; fovVisible = false
+            manageConnections()
+            boxEspEnabled = false; nameEspEnabled = false; manageESPState()
+
+            flyEnabled = false; noclipEnabled = false; walkSpeedEnabled = false; jumpPowerEnabled = false; manageMovementState()
+            
+            if fovCircleDraw then pcall(function() fovCircleDraw:Destroy() end) end
+            oldClose()
+        end
+    end
+},
+
+[91177184562415] = {
+    name = "🎨Paint Or OOF!",
+    placeId = 91177184562415,
     callback = function()
         local Menu = CreateGameMenu()
-        local CombatTab = Menu.CreateTab("Combat")
-        local VisualsTab = Menu.CreateTab("Visuals")
-        local MovementTab = Menu.CreateTab("Movement")
-        local MiscTab = Menu.CreateTab("Misc")
-        local RunService = game:GetService("RunService")
-        local UserInputService = game:GetService("UserInputService")
-        local ReplicatedStorage = game:GetService("ReplicatedStorage")
+        
+        local ScriptTab = Menu.CreateTab("Hiders")
+        local AimTab    = Menu.CreateTab("Aimbot")
+        local VisualTab = Menu.CreateTab("Visuals")
+        local ConfigTab = Menu.CreateTab("Settings")
+        
         local Players = game:GetService("Players")
+        local TweenService = game:GetService("TweenService")
+        local RunService = game:GetService("RunService")
+        local ReplicatedStorage = game:GetService("ReplicatedStorage")
+        local UserInputService = game:GetService("UserInputService")
         local LocalPlayer = Players.LocalPlayer
-        local aimbotEnabled = false
-        local silentAimEnabled = false
-        local triggerbotEnabled = false
-        local wallCheck = true
-        local teamCheck = true
-        local aimPart = "Head"
-        local aimSmoothness = 8
-        local fovRadius = 150
-        local flyEnabled = false
-        local flySpeed = 25
-        local noclipEnabled = false
-        local function getRemotes()
-            local remotes = {}
-            for _, v in ipairs(ReplicatedStorage:GetDescendants()) do
-                if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") then
-                    if v.Name:lower():find("shoot") or v.Name:lower():find("fire") or
-                       v.Name:lower():find("bullet") or v.Name:lower():find("hit") then
-                        table.insert(remotes, v)
-                    end
-                end
-            end
-            return remotes
+
+        local TARGET_CFRAME = CFrame.new(318, 66, 49)
+        local TWEEN_SPEED = 60 
+        local platformEnabled = false
+        local clientPlatform = nil
+        local highlightsEnabled = false
+        local activeHighlights = {} 
+
+        local ESP_THICK        = 2
+        local MAX_ESP_DISTANCE = 1000
+
+        local aimbotEnabled    = false
+        local wallCheckEnabled = false
+        local aimSmoothness    = 1
+        local aimRadius        = 120
+        local fovVisible       = false
+        local aimTargetPart    = "Head"
+        local isRightClickHolding = false 
+
+        local COLOR_PRESETS = {
+            {name = "Crimson Red", color = Color3.fromRGB(255, 50, 50)},
+            {name = "Neon Mint",   color = Color3.fromRGB(0, 255, 140)},
+            {name = "Deep Blue",   color = Color3.fromRGB(0, 160, 255)},
+            {name = "Hot Pink",    color = Color3.fromRGB(255, 50, 180)},
+            {name = "Bright Gold", color = Color3.fromRGB(255, 215, 0)},
+            {name = "Pure White",  color = Color3.fromRGB(255, 255, 255)}
+        }
+
+        local boxColorIdx  = 1 
+        local nameColorIdx = 6 
+
+        local ESP_COLOR      = COLOR_PRESETS[boxColorIdx].color
+        local ESP_NAME_COL   = COLOR_PRESETS[nameColorIdx].color
+
+        local boxEspEnabled  = false
+        local nameEspEnabled = false
+
+        local aimRenderConn = nil
+        local fovCircleDraw = nil
+        local inputBeganConn = nil
+        local inputEndedConn = nil
+
+        local espData = {}
+        local espRenderConn   = nil
+        local espAddedConn    = nil
+        local espRemovingConn = nil
+
+        local function isPlayerAliveAndActive(player)
+            if not player or player == LocalPlayer then return false end
+            
+            local char = player.Character
+            if not char or not char:IsDescendantOf(workspace) then return false end
+            
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if not hum or hum.Health <= 0 then return false end
+            
+            local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head")
+            if not hrp then return false end
+            
+            return true
         end
-        local shootRemote = nil
-        task.spawn(function()
-            local found = getRemotes()
-            if #found > 0 then
-                shootRemote = found[1]
-                showToast("Remotes", "Found shooting remote: " .. shootRemote.Name, "info")
+
+        pcall(function()
+            if Drawing and Drawing.new then
+                fovCircleDraw = Drawing.new("Circle")
+                fovCircleDraw.Thickness = 1
+                fovCircleDraw.NumSides = 60
+                fovCircleDraw.Filled = false
+                fovCircleDraw.Color = Color3.fromRGB(255, 255, 255)
+                fovCircleDraw.Visible = false
             end
         end)
-        local bodyVelocity
-        local function toggleFly(state)
-            flyEnabled = state
-            local char = LocalPlayer.Character
-            if not char then return end
-            local root = char:FindFirstChild("HumanoidRootPart")
-            if not root then return end
-            if state then
-                bodyVelocity = Instance.new("BodyVelocity")
-                bodyVelocity.MaxForce = Vector3.new(1e5, 1e5, 1e5)
-                bodyVelocity.Velocity = Vector3.new(0,0,0)
-                bodyVelocity.Parent = root
-                RunService.RenderStepped:Connect(function()
-                    if not flyEnabled or not bodyVelocity then return end
-                    local cam = workspace.CurrentCamera
-                    local moveDir = Vector3.new()
-                    if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + cam.CFrame.LookVector end
-                    if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - cam.CFrame.LookVector end
-                    if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - cam.CFrame.RightVector end
-                    if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + cam.CFrame.RightVector end
-                    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0,1,0) end
-                    if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then moveDir = moveDir - Vector3.new(0,1,0) end
-                    bodyVelocity.Velocity = moveDir.Unit * flySpeed * 10
-                end)
+
+        local function togglePlatform(state)
+            platformEnabled = state
+            
+            if platformEnabled then
+                local character = LocalPlayer.Character
+                local hrp = character and character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    if clientPlatform then clientPlatform:Destroy() end
+                    
+                    clientPlatform = Instance.new("Part")
+                    clientPlatform.Name = "ClientSafePlatform"
+                    clientPlatform.Size = Vector3.new(12, 1, 12)
+                    clientPlatform.CFrame = hrp.CFrame * CFrame.new(0, -3.5, 0)
+                    clientPlatform.Transparency = 0.5
+                    clientPlatform.Color = Color3.fromRGB(0, 255, 140)
+                    clientPlatform.Material = Enum.Material.SmoothPlastic
+                    clientPlatform.Anchored = true
+                    clientPlatform.CanCollide = true
+                    clientPlatform.Parent = workspace
+                end
             else
-                if bodyVelocity then bodyVelocity:Destroy() end
+                if clientPlatform then
+                    clientPlatform:Destroy()
+                    clientPlatform = nil
+                end
             end
         end
-        local noclipConn
-        local function toggleNoclip(state)
-            noclipEnabled = state
-            if state then
-                noclipConn = RunService.Stepped:Connect(function()
-                    local char = LocalPlayer.Character
-                    if char then
-                        for _, part in pairs(char:GetDescendants()) do
+
+        local function teleportPlayer()
+            local character = LocalPlayer.Character
+            local hrp = character and character:FindFirstChild("HumanoidRootPart")
+            
+            if hrp then
+                local distance = (hrp.Position - TARGET_CFRAME.Position).Magnitude
+                local duration = distance / TWEEN_SPEED
+                if duration < 0.2 then duration = 0.2 end 
+                
+                showToast("Teleporting", "safe spot located, moving character..", "info")
+                
+                local tweenNoclip = RunService.Stepped:Connect(function()
+                    if LocalPlayer.Character then
+                        for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
                             if part:IsA("BasePart") then
                                 part.CanCollide = false
                             end
                         end
                     end
                 end)
-            else
-                if noclipConn then noclipConn:Disconnect() end
-            end
-        end
-        local function getClosestPlayer()
-            local closest, dist = nil, math.huge
-            local mousePos = UserInputService:GetMouseLocation()
-            local cam = workspace.CurrentCamera
-            for _, plr in pairs(Players:GetPlayers()) do
-                if plr == LocalPlayer or (teamCheck and plr.Team == LocalPlayer.Team) then continue end
-                local char = plr.Character
-                if not char then continue end
-                local hum = char:FindFirstChildOfClass("Humanoid")
-                local part = char:FindFirstChild(aimPart)
-                if not hum or hum.Health <= 0 or not part then continue end
-                local screenPos, onScreen = cam:WorldToViewportPoint(part.Position)
-                if not onScreen then continue end
-                local screenDist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
-                if screenDist > fovRadius then continue end
-                if wallCheck then
-                    local ray = workspace:Raycast(cam.CFrame.Position, (part.Position - cam.CFrame.Position).Unit * 1000)
-                    if ray and ray.Instance and not ray.Instance:IsDescendantOf(char) then
-                        continue
+                
+                local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut)
+                local tween = TweenService:Create(hrp, tweenInfo, {CFrame = TARGET_CFRAME})
+                
+                tween.Completed:Connect(function()
+                    if tweenNoclip then tweenNoclip:Disconnect() end
+                    
+                    hrp.Velocity = Vector3.zero
+                    hrp.RotVelocity = Vector3.zero
+                    
+                    local paintRemotes = ReplicatedStorage:WaitForChild("PaintRemotes", 5)
+                    if paintRemotes then
+                        local updatePos = paintRemotes:FindFirstChild("UpdatePosition") or paintRemotes:FindFirstChild("SetFrozen")
+                        if updatePos then
+                            updatePos:FireServer(TARGET_CFRAME)
+                        end
                     end
-                end
-                if screenDist < dist then
-                    dist = screenDist
-                    closest = part
-                end
-            end
-            return closest
-        end
-        local aimConn
-        local function updateAimbot()
-            if not aimbotEnabled then return end
-            local part = getClosestPlayer()
-            if not part then return end
-            local cam = workspace.CurrentCamera
-            local targetCFrame = CFrame.new(cam.CFrame.Position, part.Position)
-            cam.CFrame = cam.CFrame:Lerp(targetCFrame, 1 / aimSmoothness)
-        end
-        local oldNamecall
-        oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
-            local args = {...}
-            local method = getnamecallmethod()
-            if silentAimEnabled and method == "FireServer" and shootRemote and self == shootRemote then
-                local targetPart = getClosestPlayer()
-                if targetPart then
-                    if args[1] and typeof(args[1]) == "Vector3" then
-                        args[1] = targetPart.Position + targetPart.Velocity * 0.1
-                    end
-                    return oldNamecall(self, unpack(args))
-                end
-            end
-            return oldNamecall(self, ...)
-        end)
-        local triggerConn
-        local function triggerbotLoop()
-            while triggerbotEnabled do
-                task.wait(0.03)
-                local targetPart = getClosestPlayer()
-                if targetPart and shootRemote then
-                    shootRemote:FireServer()
-                end
+                end)
+                
+                tween:Play()
             end
         end
-        Menu.AddHeader(CombatTab, "Aimbot Settings")
-        Menu.AddToggle(CombatTab, "Aimbot (Right Click)", false, function(s)
-            aimbotEnabled = s
-            if s and not aimConn then
-                aimConn = RunService.RenderStepped:Connect(updateAimbot)
-            elseif not s and aimConn then
-                aimConn:Disconnect()
-                aimConn = nil
+
+        local function highlightCharacter(player)
+            if player == LocalPlayer then return end 
+            
+            local function onCharAdded(char)
+                if not highlightsEnabled then return end
+                if activeHighlights[player] then activeHighlights[player]:Destroy() end
+                
+                local highlight = Instance.new("Highlight")
+                highlight.Name = "PlayerEspHighlight"
+                highlight.FillColor = Color3.fromRGB(255, 0, 0)
+                highlight.FillTransparency = 0.5
+                highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                highlight.OutlineTransparency = 0
+                highlight.Adornee = char
+                highlight.Parent = char
+                
+                activeHighlights[player] = highlight
             end
-        end)
-        Menu.AddToggle(CombatTab, "Silent Aim", false, function(s) silentAimEnabled = s end)
-        Menu.AddToggle(CombatTab, "Trigger Bot", false, function(s)
-            triggerbotEnabled = s
-            if s and not triggerConn then
-                triggerConn = task.spawn(triggerbotLoop)
-            elseif not s and triggerConn then
-                triggerConn = nil
-            end
-        end)
-        Menu.AddToggle(CombatTab, "Team Check", true, function(s) teamCheck = s end)
-        Menu.AddToggle(CombatTab, "Wall Check", true, function(s) wallCheck = s end)
-        Menu.AddHeader(CombatTab, "Aim Part")
-        for _, part in ipairs({"Head", "HumanoidRootPart", "UpperTorso"}) do
-            Menu.AddButton(CombatTab, "Aim at " .. part, function()
-                aimPart = part
-                showToast("Aim Part", "Now aiming at: " .. part, "info")
+            
+            if player.Character then onCharAdded(player.Character) end
+            
+            local connection
+            connection = player.CharacterAdded:Connect(function(char)
+                if not highlightsEnabled then
+                    connection:Disconnect()
+                    return
+                end
+                onCharAdded(char)
             end)
         end
-        Menu.AddSlider(CombatTab, "FOV", 30, 500, fovRadius, function(v) fovRadius = v end)
-        Menu.AddSlider(CombatTab, "Smoothness", 1, 20, aimSmoothness, function(v) aimSmoothness = v end)
-        Menu.AddHeader(MovementTab, "Movement")
-        Menu.AddToggle(MovementTab, "Fly (Hold Right Click or use keys)", false, toggleFly)
-        Menu.AddSlider(MovementTab, "Fly Speed", 10, 100, flySpeed, function(v) flySpeed = v end)
-        Menu.AddToggle(MovementTab, "Noclip", false, toggleNoclip)
-        local oldClose = Menu.OnClose or function() end
-        Menu.OnClose = function()
-            aimbotEnabled = false
-            silentAimEnabled = false
-            triggerbotEnabled = false
-            flyEnabled = false
-            noclipEnabled = false
-            if aimConn then aimConn:Disconnect() end
-            if noclipConn then noclipConn:Disconnect() end
-            oldClose()
+
+        local function toggleHighlights(state)
+            highlightsEnabled = state
+            
+            if highlightsEnabled then
+                for _, player in ipairs(Players:GetPlayers()) do
+                    highlightCharacter(player)
+                end
+            else
+                for player, highlight in pairs(activeHighlights) do
+                    if highlight then highlight:Destroy() end
+                end
+                activeHighlights = {}
+            end
         end
-        showToast("Sniper Arena", "Loaded combat features!", "info")
+
+        local function getClosestPlayerToMouth()
+            local target = nil
+            local shortestDistance = math.huge
+            local camera = workspace.CurrentCamera
+            local mouseLocation = UserInputService:GetMouseLocation()
+
+            if not camera then return nil end
+
+            for _, player in pairs(Players:GetPlayers()) do
+                if not isPlayerAliveAndActive(player) then continue end
+                
+                local char = player.Character
+                local part = char:FindFirstChild(aimTargetPart)
+
+                if part then
+                    local screenPos, onScreen = camera:WorldToViewportPoint(part.Position)
+                    if onScreen then
+                        local distance = (Vector2.new(screenPos.X, screenPos.Y) - mouseLocation).Magnitude
+                    
+                        if distance < shortestDistance and distance <= aimRadius then
+                            
+                            if wallCheckEnabled then
+                                local isBlocked = false
+                                local origin = camera.CFrame.Position
+                                local direction = (part.Position - origin)
+                                
+                                local ignoreList = {LocalPlayer.Character, char, camera}
+                                local raycastParams = RaycastParams.new()
+                                raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+                                raycastParams.FilterDescendantsInstances = ignoreList
+                                raycastParams.IgnoreWater = true
+
+                                while true do
+                                    local raycastResult = workspace:Raycast(origin, direction, raycastParams)
+                                    if not raycastResult then
+                                        break 
+                                    end
+
+                                    local hitInstance = raycastResult.Instance
+                                    if hitInstance and (hitInstance.Transparency > 0.5 or hitInstance.CanCollide == false) then
+                                        table.insert(ignoreList, hitInstance)
+                                        raycastParams.FilterDescendantsInstances = ignoreList
+                                    else
+                                        isBlocked = true
+                                        break
+                                    end
+                                end
+
+                                if isBlocked then 
+                                    continue 
+                                end
+                            end
+
+                            target = part
+                            shortestDistance = distance
+                        end
+                    end
+                end
+            end
+            return target
+        end
+
+        local function handleAimSystemUpdate()
+            local camera = workspace.CurrentCamera
+            if not camera then return end
+
+            if fovCircleDraw then
+                fovCircleDraw.Position = UserInputService:GetMouseLocation()
+                fovCircleDraw.Radius = aimRadius
+                fovCircleDraw.Visible = fovVisible
+            end
+
+            if not aimbotEnabled then return end
+            if not isRightClickHolding then return end
+
+            local targetPart = getClosestPlayerToMouth()
+            if targetPart then
+                local lookCFrame = CFrame.new(camera.CFrame.Position, targetPart.Position)
+                if aimSmoothness <= 1 then
+                    camera.CFrame = lookCFrame
+                else
+                    camera.CFrame = camera.CFrame:Lerp(lookCFrame, 1 / aimSmoothness)
+                end
+            end
+        end
+
+        local function manageAimEngineState()
+            if aimbotEnabled or fovVisible then
+                if not aimRenderConn then
+                    aimRenderConn = RunService.RenderStepped:Connect(handleAimSystemUpdate)
+                end
+                if not inputBeganConn then
+                    inputBeganConn = UserInputService.InputBegan:Connect(function(input, processed)
+                        if input.UserInputType == Enum.UserInputType.MouseButton2 then
+                            isRightClickHolding = true
+                        end
+                    end)
+                end
+                if not inputEndedConn then
+                    inputEndedConn = UserInputService.InputEnded:Connect(function(input)
+                        if input.UserInputType == Enum.UserInputType.MouseButton2 then
+                            isRightClickHolding = false
+                        end
+                    end)
+                end
+            else
+                if aimRenderConn then aimRenderConn:Disconnect(); aimRenderConn = nil end
+                if inputBeganConn then inputBeganConn:Disconnect(); inputBeganConn = nil end
+                if inputEndedConn then inputEndedConn:Disconnect(); inputEndedConn = nil end
+                isRightClickHolding = false
+                if fovCircleDraw then fovCircleDraw.Visible = false end
+            end
+        end
+
+        local function buildESPFrame(player)
+            local holder = Instance.new("Frame")
+            holder.Name                   = "ESP_" .. player.Name
+            holder.BackgroundTransparency = 1
+            holder.BorderSizePixel        = 0
+            holder.Size                   = UDim2.new(0, 0, 0, 0)
+            holder.ClipsDescendants       = false
+            holder.ZIndex                 = 20
+            holder.Parent                 = ScreenGui
+
+            local function makeLine()
+                local f = Instance.new("Frame")
+                f.BackgroundColor3  = ESP_COLOR
+                f.BorderSizePixel   = 0
+                f.ZIndex            = 21
+                f.Parent            = holder
+                return f
+            end
+
+            local nameTag = Instance.new("TextLabel")
+            nameTag.BackgroundTransparency = 1
+            nameTag.TextColor3             = ESP_NAME_COL
+            nameTag.TextStrokeTransparency = 0.5
+            nameTag.TextStrokeColor3       = Color3.new(0, 0, 0)
+            nameTag.Font                   = Enum.Font.GothamBold
+            nameTag.TextSize               = 11
+            nameTag.Text                   = player.Name
+            nameTag.Size                   = UDim2.new(0, 120, 0, 14)
+            nameTag.TextXAlignment         = Enum.TextXAlignment.Center
+            nameTag.ZIndex                 = 22
+            nameTag.Visible                = false
+            nameTag.Parent                 = ScreenGui
+
+            return {
+                holder  = holder,
+                top     = makeLine(),
+                bot     = makeLine(),
+                left    = makeLine(),
+                right   = makeLine(),
+                nameTag = nameTag
+            }
+        end
+
+        local function destroyESPFor(player)
+            local d = espData[player]
+            if not d then return end
+            if d.holder  and d.holder.Parent  then d.holder:Destroy()  end
+            if d.nameTag and d.nameTag.Parent then d.nameTag:Destroy() end
+            espData[player] = nil
+        end
+
+        local function destroyAllESP()
+            for player, _ in pairs(espData) do
+                destroyESPFor(player)
+            end
+            espData = {}
+        end
+
+        local TOP_OFFSET = 3.5   
+        local BOT_OFFSET = 3.2   
+        local WIDTH_RATIO = 0.45 
+
+        local function getScreenBounds(char, camera)
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if not hrp then return nil end
+
+            local distance = (camera.CFrame.Position - hrp.Position).Magnitude
+            if distance > MAX_ESP_DISTANCE then return nil end
+
+            local pos = hrp.Position
+            local topSP = camera:WorldToViewportPoint(pos + Vector3.new(0,  TOP_OFFSET, 0))
+            local botSP = camera:WorldToViewportPoint(pos - Vector3.new(0,  BOT_OFFSET, 0))
+
+            if topSP.Z <= 0 or botSP.Z <= 0 then return nil end
+
+            local topY = math.min(topSP.Y, botSP.Y)
+            local botY = math.max(topSP.Y, botSP.Y)
+            local screenH = botY - topY
+            if screenH < 5 then return nil end  
+
+            local screenW = screenH * WIDTH_RATIO
+            local centerX = (topSP.X + botSP.X) / 2
+            local pad = 2
+            
+            return  centerX - screenW / 2 - pad, topY - pad, screenW + pad * 2, screenH + pad * 2
+        end
+
+        local function updateESP()
+            local camera = workspace.CurrentCamera
+            if not camera then return end
+            for cachedPlayer, _ in pairs(espData) do
+                if not Players:FindFirstChild(cachedPlayer.Name) then
+                    destroyESPFor(cachedPlayer)
+                end
+            end
+
+            for _, player in pairs(Players:GetPlayers()) do
+                if player == LocalPlayer then continue end
+                if not isPlayerAliveAndActive(player) then
+                    local d = espData[player]
+                    if d then
+                        d.holder.Visible  = false
+                        d.nameTag.Visible = false
+                    end
+                    continue
+                end
+
+                local char = player.Character
+
+                if not espData[player] then
+                    espData[player] = buildESPFrame(player)
+                end
+                local d = espData[player]
+
+                local x, y, w, h = getScreenBounds(char, camera)
+
+                if not x then
+                    d.holder.Visible  = false
+                    d.nameTag.Visible = false
+                    continue
+                end
+
+                local t = ESP_THICK
+
+                d.top.BackgroundColor3 = ESP_COLOR
+                d.bot.BackgroundColor3 = ESP_COLOR
+                d.left.BackgroundColor3 = ESP_COLOR
+                d.right.BackgroundColor3 = ESP_COLOR
+                d.nameTag.TextColor3 = ESP_NAME_COL
+
+                d.holder.Position = UDim2.new(0, x, 0, y)
+                d.holder.Size     = UDim2.new(0, w, 0, h)
+                d.holder.Visible  = boxEspEnabled
+
+                if boxEspEnabled then
+                    d.top.Position = UDim2.new(0, 0, 0, 0); d.top.Size = UDim2.new(1, 0, 0, t)
+                    d.bot.Position = UDim2.new(0, 0, 1, -t); d.bot.Size = UDim2.new(1, 0, 0, t)
+                    d.left.Position = UDim2.new(0, 0, 0, 0); d.left.Size = UDim2.new(0, t, 1, 0)
+                    d.right.Position = UDim2.new(1, -t, 0, 0); d.right.Size = UDim2.new(0, t, 1, 0)
+                end
+
+                d.nameTag.Position = UDim2.new(0, x + w / 2 - 60, 0, y - 16)
+                d.nameTag.Visible  = nameEspEnabled
+            end
+        end
+
+        local function manageESPState()
+            if boxEspEnabled or nameEspEnabled then
+                if not espRenderConn then
+                    espRenderConn = RunService.RenderStepped:Connect(updateESP)
+                end
+                if not espAddedConn then
+                    espAddedConn = Players.PlayerAdded:Connect(function(p) end)
+                end
+                if not espRemovingConn then
+                    espRemovingConn = Players.PlayerRemoving:Connect(function(p)
+                        destroyESPFor(p)
+                    end)
+                end
+            else
+                if espRenderConn   then espRenderConn:Disconnect(); espRenderConn   = nil end
+                if espAddedConn    then espAddedConn:Disconnect(); espAddedConn    = nil end
+                if espRemovingConn then espRemovingConn:Disconnect(); espRemovingConn = nil end
+                destroyAllESP()
+            end
+        end
+
+        local playerAddedConn = Players.PlayerAdded:Connect(function(player)
+            if highlightsEnabled then highlightCharacter(player) end
+        end)
+
+        local playerRemovingConn = Players.PlayerRemoving:Connect(function(player)
+            if activeHighlights[player] then
+                activeHighlights[player]:Destroy()
+                activeHighlights[player] = nil
+            end
+        end)
+
+        local baseCleanUp = Menu.OnClose or function() end
+        Menu.OnClose = function()
+            togglePlatform(false)
+            toggleHighlights(false)
+            
+            aimbotEnabled = false
+            fovVisible = false
+            manageAimEngineState()
+            
+            boxEspEnabled = false
+            nameEspEnabled = false
+            manageESPState()
+            
+            if fovCircleDraw then pcall(function() fovCircleDraw:Destroy() end) end
+            if playerAddedConn then playerAddedConn:Disconnect() end
+            if playerRemovingConn then playerRemovingConn:Disconnect() end
+            baseCleanUp()
+        end
+
+        Menu.AddHeader(ScriptTab, "Player Modifications")
+        Menu.AddToggle(ScriptTab, "spawn platform (platform after)", false, function(state)
+            togglePlatform(state)
+        end)
+        Menu.AddButton(ScriptTab, "move to safe spot", function()
+            teleportPlayer()
+        end)
+
+        Menu.AddHeader(AimTab, "Targeting Mechanisms")
+        Menu.AddToggle(AimTab, "Aimbot (Hold Right Click)", false, function(state)
+            aimbotEnabled = state
+            manageAimEngineState()
+        end)
+        Menu.AddToggle(AimTab, "Wall Check", false, function(state)
+            wallCheckEnabled = state
+        end)
+        Menu.AddToggle(AimTab, "Show FOV Circle", false, function(state)
+            fovVisible = state
+            manageAimEngineState()
+        end)
+        Menu.AddSlider(AimTab, "FOV Radius", 30, 500, aimRadius, function(val)
+            aimRadius = val
+        end)
+        Menu.AddSlider(AimTab, "Aim Smoothness", 1, 20, aimSmoothness, function(val)
+            aimSmoothness = val
+        end)
+
+        Menu.AddHeader(AimTab, "Target Priority Selection")
+        Menu.AddButton(AimTab, "Target: Head", function()
+            aimTargetPart = "Head"
+            showToast("Aim Target", "Now targeting: Head", "info")
+        end)
+        Menu.AddButton(AimTab, "Target: Torso", function()
+            aimTargetPart = "HumanoidRootPart"
+            showToast("Aim Target", "Now targeting: Torso", "info")
+        end)
+
+        Menu.AddHeader(VisualTab, "Roblox Highlight ESP")
+        Menu.AddToggle(VisualTab, "Player ESP Highlights", false, function(state)
+            toggleHighlights(state)
+        end)
+
+        Menu.AddHeader(VisualTab, "Drawing API ESP (Main)")
+        Menu.AddToggle(VisualTab, "2D Box ESP", false, function(state)
+            boxEspEnabled = state
+            manageESPState()
+        end)
+        Menu.AddToggle(VisualTab, "Name ESP", false, function(state)
+            nameEspEnabled = state
+            manageESPState()
+        end)
+
+        Menu.AddHeader(ConfigTab, "ESP Configuration")
+        Menu.AddSlider(ConfigTab, "Line Thickness (px)", 1, 6, ESP_THICK, function(val)
+            ESP_THICK = val
+        end)
+        Menu.AddSlider(ConfigTab, "Max Render Distance", 100, 3000, MAX_ESP_DISTANCE, function(val)
+            MAX_ESP_DISTANCE = val
+        end)
+
+        Menu.AddHeader(ConfigTab, "Theme Customization")
+        Menu.AddButton(ConfigTab, "Cycle Box ESP Color", function()
+            boxColorIdx = (boxColorIdx % #COLOR_PRESETS) + 1
+            ESP_COLOR = COLOR_PRESETS[boxColorIdx].color
+            showToast("Theme Updated", "Box ESP set to " .. COLOR_PRESETS[boxColorIdx].name, "info")
+        end)
+        Menu.AddButton(ConfigTab, "Cycle Name Tag Color", function()
+            nameColorIdx = (nameColorIdx % #COLOR_PRESETS) + 1
+            ESP_NAME_COL = COLOR_PRESETS[nameColorIdx].color
+            showToast("Theme Updated", "Name Tag ESP set to " .. COLOR_PRESETS[nameColorIdx].name, "info")
+        end)
+
+        showToast("Paint Or OOF!", "All features loaded successfully!", "info")
+    end
+},
+
+[78724049937437] = {
+    name = "[🎨] Paint And SEEK!",
+    placeId = 78724049937437,
+    callback = function()
+        local Menu = CreateGameMenu()
+        
+        local ScriptTab = Menu.CreateTab("Hiders")
+        local VisualTab = Menu.CreateTab("Visuals")
+        local ConfigTab = Menu.CreateTab("Settings")
+        
+        local Players = game:GetService("Players")
+        local TweenService = game:GetService("TweenService")
+        local RunService = game:GetService("RunService")
+        local ReplicatedStorage = game:GetService("ReplicatedStorage")
+        local UserInputService = game:GetService("UserInputService")
+        local LocalPlayer = Players.LocalPlayer
+
+        local TARGET_CFRAME = CFrame.new(433, -102, 137)
+        local TWEEN_SPEED = 60 
+        local platformEnabled = false
+ 
+        local clientPlatform = nil
+        local highlightsEnabled = false
+        local activeHighlights = {} 
+
+        local ESP_THICK        = 2
+        local MAX_ESP_DISTANCE = 1000
+
+        local COLOR_PRESETS = {
+            {name = "Crimson Red", color = Color3.fromRGB(255, 50, 50)},
+            {name = "Neon Mint",   color = Color3.fromRGB(0, 255, 140)},
+            {name = "Deep Blue",   color = Color3.fromRGB(0, 160, 255)},
+            {name = "Hot Pink",    color = Color3.fromRGB(255, 50, 180)},
+            {name = "Bright Gold", color = Color3.fromRGB(255, 215, 0)},
+            {name = "Pure White",  color = Color3.fromRGB(255, 255, 255)}
+        }
+
+        local boxColorIdx  = 1 
+        local nameColorIdx = 6 
+
+        local ESP_COLOR      = COLOR_PRESETS[boxColorIdx].color
+        local ESP_NAME_COL   = COLOR_PRESETS[nameColorIdx].color
+
+        local boxEspEnabled  = false
+        local nameEspEnabled = false
+
+        local espData = {}
+        local espRenderConn   = nil
+        local espAddedConn    = nil
+        local espRemovingConn = nil
+        local function isPlayerAliveAndActive(player)
+            if not player or player == LocalPlayer then return false end
+            
+            local char = player.Character
+            if not char or not char:IsDescendantOf(workspace) then return false end
+            
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if not hum or hum.Health <= 0 then return false end
+            
+            local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head")
+            if not hrp then return false end
+            
+            return true
+        end
+
+        local function togglePlatform(state)
+            platformEnabled = state
+            
+            if platformEnabled then
+                local character = LocalPlayer.Character
+                local hrp = character and character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    if clientPlatform then clientPlatform:Destroy() end
+                    
+                    clientPlatform = Instance.new("Part")
+                    clientPlatform.Name = "ClientSafePlatform"
+                    clientPlatform.Size = Vector3.new(12, 1, 12)
+                    clientPlatform.CFrame = hrp.CFrame * CFrame.new(0, -3.5, 0)
+                    clientPlatform.Transparency = 0.5
+                    clientPlatform.Color = Color3.fromRGB(0, 255, 140)
+                    clientPlatform.Material = Enum.Material.SmoothPlastic
+                    clientPlatform.Anchored = true
+                    clientPlatform.CanCollide = true
+                    clientPlatform.Parent = workspace
+                end
+            else
+                if clientPlatform then
+                    clientPlatform:Destroy()
+                    clientPlatform = nil
+                end
+            end
+        end
+
+        local function teleportPlayer()
+            local character = LocalPlayer.Character
+            local hrp = character and character:FindFirstChild("HumanoidRootPart")
+            
+            if hrp then
+                local distance = (hrp.Position - TARGET_CFRAME.Position).Magnitude
+                local duration = distance / TWEEN_SPEED
+                if duration < 0.2 then duration = 0.2 end 
+                
+                showToast("Teleporting", "safe spot located, moving character..", "info")
+                
+                local tweenNoclip = RunService.Stepped:Connect(function()
+                    if LocalPlayer.Character then
+                        for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
+                            if part:IsA("BasePart") then
+                                part.CanCollide = false
+                            end
+                        end
+                    end
+                end)
+                
+                local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut)
+                local tween = TweenService:Create(hrp, tweenInfo, {CFrame = TARGET_CFRAME})
+                
+                tween.Completed:Connect(function()
+                    if tweenNoclip then tweenNoclip:Disconnect() end
+                    
+                    hrp.Velocity = Vector3.zero
+                    hrp.RotVelocity = Vector3.zero
+                    
+                    local paintRemotes = ReplicatedStorage:WaitForChild("PaintRemotes", 5)
+                    if paintRemotes then
+                        local updatePos = paintRemotes:FindFirstChild("UpdatePosition") or paintRemotes:FindFirstChild("SetFrozen")
+                        if updatePos then
+                            updatePos:FireServer(TARGET_CFRAME)
+                        end
+                    end
+                end)
+                
+                tween:Play()
+            end
+        end
+
+        local function highlightCharacter(player)
+            if player == LocalPlayer then return end 
+            
+            local function onCharAdded(char)
+                if not highlightsEnabled then return end
+                if activeHighlights[player] then activeHighlights[player]:Destroy() end
+                
+                local highlight = Instance.new("Highlight")
+                highlight.Name = "PlayerEspHighlight"
+                highlight.FillColor = Color3.fromRGB(255, 0, 0)
+                highlight.FillTransparency = 0.5
+                highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                highlight.OutlineTransparency = 0
+                highlight.Adornee = char
+                highlight.Parent = char
+                
+                activeHighlights[player] = highlight
+            end
+            
+            if player.Character then onCharAdded(player.Character) end
+            
+            local connection
+            connection = player.CharacterAdded:Connect(function(char)
+                if not highlightsEnabled then
+                    connection:Disconnect()
+                    return
+                end
+                onCharAdded(char)
+            end)
+        end
+
+        local function toggleHighlights(state)
+            highlightsEnabled = state
+            
+            if highlightsEnabled then
+                for _, player in ipairs(Players:GetPlayers()) do
+                    highlightCharacter(player)
+                end
+            else
+                for player, highlight in pairs(activeHighlights) do
+                    if highlight then highlight:Destroy() end
+                end
+                activeHighlights = {}
+            end
+        end
+
+        local function buildESPFrame(player)
+            local holder = Instance.new("Frame")
+            holder.Name                   = "ESP_" .. player.Name
+            holder.BackgroundTransparency = 1
+            holder.BorderSizePixel        = 0
+            holder.Size                   = UDim2.new(0, 0, 0, 0)
+            holder.ClipsDescendants       = false
+            holder.ZIndex                 = 20
+            holder.Parent                 = ScreenGui
+
+            local function makeLine()
+                local f = Instance.new("Frame")
+                f.BackgroundColor3  = ESP_COLOR
+                f.BorderSizePixel   = 0
+                f.ZIndex            = 21
+                f.Parent            = holder
+                return f
+            end
+
+            local nameTag = Instance.new("TextLabel")
+            nameTag.BackgroundTransparency = 1
+            nameTag.TextColor3             = ESP_NAME_COL
+            nameTag.TextStrokeTransparency = 0.5
+            nameTag.TextStrokeColor3       = Color3.new(0, 0, 0)
+            nameTag.Font                   = Enum.Font.GothamBold
+            nameTag.TextSize               = 11
+            nameTag.Text                   = player.Name
+            nameTag.Size                   = UDim2.new(0, 120, 0, 14)
+            nameTag.TextXAlignment         = Enum.TextXAlignment.Center
+            nameTag.ZIndex                 = 22
+            nameTag.Visible                = false
+            nameTag.Parent                 = ScreenGui
+
+            return {
+                holder  = holder,
+                top     = makeLine(),
+                bot     = makeLine(),
+                left    = makeLine(),
+                right   = makeLine(),
+                nameTag = nameTag
+            }
+        end
+
+        local function destroyESPFor(player)
+            local d = espData[player]
+            if not d then return end
+            if d.holder  and d.holder.Parent  then d.holder:Destroy()  end
+            if d.nameTag and d.nameTag.Parent then d.nameTag:Destroy() end
+            espData[player] = nil
+        end
+
+        local function destroyAllESP()
+            for player, _ in pairs(espData) do
+                destroyESPFor(player)
+            end
+            espData = {}
+        end
+
+        local TOP_OFFSET = 3.5   
+        local BOT_OFFSET = 3.2   
+        local WIDTH_RATIO = 0.45 
+
+        local function getScreenBounds(char, camera)
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if not hrp then return nil end
+
+            local distance = (camera.CFrame.Position - hrp.Position).Magnitude
+            if distance > MAX_ESP_DISTANCE then return nil end
+
+            local pos = hrp.Position
+            local topSP = camera:WorldToViewportPoint(pos + Vector3.new(0,  TOP_OFFSET, 0))
+            local botSP = camera:WorldToViewportPoint(pos - Vector3.new(0,  BOT_OFFSET, 0))
+
+            if topSP.Z <= 0 or botSP.Z <= 0 then return nil end
+
+            local topY = math.min(topSP.Y, botSP.Y)
+            local botY = math.max(topSP.Y, botSP.Y)
+            local screenH = botY - topY
+            if screenH < 5 then return nil end  
+
+            local screenW = screenH * WIDTH_RATIO
+            local centerX = (topSP.X + botSP.X) / 2
+            local pad = 2
+            
+            return  centerX - screenW / 2 - pad, topY - pad, screenW + pad * 2, screenH + pad * 2
+        end
+
+        local function updateESP()
+            local camera = workspace.CurrentCamera
+            if not camera then return end
+            for cachedPlayer, _ in pairs(espData) do
+                if not Players:FindFirstChild(cachedPlayer.Name) then
+                    destroyESPFor(cachedPlayer)
+                end
+            end
+
+            for _, player in pairs(Players:GetPlayers()) do
+                if player == LocalPlayer then continue end
+                if not isPlayerAliveAndActive(player) then
+                    local d = espData[player]
+                    if d then
+                        d.holder.Visible  = false
+                        d.nameTag.Visible = false
+                    end
+                    continue
+                end
+
+                local char = player.Character
+
+                if not espData[player] then
+                    espData[player] = buildESPFrame(player)
+                end
+                local d = espData[player]
+
+                local x, y, w, h = getScreenBounds(char, camera)
+
+                if not x then
+                    d.holder.Visible  = false
+                    d.nameTag.Visible = false
+                    continue
+                end
+
+                local t = ESP_THICK
+
+                d.top.BackgroundColor3 = ESP_COLOR
+                d.bot.BackgroundColor3 = ESP_COLOR
+                d.left.BackgroundColor3 = ESP_COLOR
+                d.right.BackgroundColor3 = ESP_COLOR
+                d.nameTag.TextColor3 = ESP_NAME_COL
+
+                d.holder.Position = UDim2.new(0, x, 0, y)
+                d.holder.Size     = UDim2.new(0, w, 0, h)
+                d.holder.Visible  = boxEspEnabled
+
+                if boxEspEnabled then
+                    d.top.Position = UDim2.new(0, 0, 0, 0)
+                    d.top.Size = UDim2.new(1, 0, 0, t)
+                    d.bot.Position = UDim2.new(0, 0, 1, -t)
+                    d.bot.Size = UDim2.new(1, 0, 0, t)
+                    d.left.Position = UDim2.new(0, 0, 0, 0)
+                    d.left.Size = UDim2.new(0, t, 1, 0)
+                    d.right.Position = UDim2.new(1, -t, 0, 0)
+                    d.right.Size = UDim2.new(0, t, 1, 0)
+                end
+
+                d.nameTag.Position = UDim2.new(0, x + w / 2 - 60, 0, y - 16)
+                d.nameTag.Visible  = nameEspEnabled
+            end
+        end
+
+        local function manageESPState()
+            if boxEspEnabled or nameEspEnabled then
+                if not espRenderConn then
+                    espRenderConn = RunService.RenderStepped:Connect(updateESP)
+                end
+                if not espAddedConn then
+                    espAddedConn = Players.PlayerAdded:Connect(function(p) end)
+                end
+                if not espRemovingConn then
+                    espRemovingConn = Players.PlayerRemoving:Connect(function(p)
+                        destroyESPFor(p)
+                    end)
+                end
+            else
+                if espRenderConn   then espRenderConn:Disconnect(); espRenderConn   = nil end
+                if espAddedConn    then espAddedConn:Disconnect(); espAddedConn    = nil end
+                if espRemovingConn then espRemovingConn:Disconnect(); espRemovingConn = nil end
+                destroyAllESP()
+            end
+        end
+
+        local playerAddedConn = Players.PlayerAdded:Connect(function(player)
+            if highlightsEnabled then highlightCharacter(player) end
+        end)
+
+        local playerRemovingConn = Players.PlayerRemoving:Connect(function(player)
+            if activeHighlights[player] then
+                activeHighlights[player]:Destroy()
+                activeHighlights[player] = nil
+            end
+        end)
+
+        local baseCleanUp = Menu.OnClose or function() end
+        Menu.OnClose = function()
+            togglePlatform(false)
+            toggleHighlights(false)
+            
+            boxEspEnabled = false
+            nameEspEnabled = false
+            manageESPState()
+            
+            if playerAddedConn then playerAddedConn:Disconnect() end
+            if playerRemovingConn then playerRemovingConn:Disconnect() end
+            baseCleanUp()
+        end
+
+        Menu.AddHeader(ScriptTab, "Player Modifications")
+        Menu.AddToggle(ScriptTab, "spawn platform (platform after)", false, function(state)
+            togglePlatform(state)
+        end)
+        Menu.AddButton(ScriptTab, "move to safe spot", function()
+            teleportPlayer()
+        end)
+
+        Menu.AddHeader(VisualTab, "Roblox Highlight ESP")
+        Menu.AddToggle(VisualTab, "Player ESP Highlights", false, function(state)
+            toggleHighlights(state)
+        end)
+
+        Menu.AddHeader(VisualTab, "Drawing API ESP (Main)")
+        Menu.AddToggle(VisualTab, "2D Box ESP", false, function(state)
+            boxEspEnabled = state
+            manageESPState()
+        end)
+        Menu.AddToggle(VisualTab, "Name ESP", false, function(state)
+            nameEspEnabled = state
+            manageESPState()
+        end)
+
+        Menu.AddHeader(ConfigTab, "ESP Configuration")
+        Menu.AddSlider(ConfigTab, "Line Thickness (px)", 1, 6, ESP_THICK, function(val)
+            ESP_THICK = val
+        end)
+        Menu.AddSlider(ConfigTab, "Max Render Distance", 100, 3000, MAX_ESP_DISTANCE, function(val)
+            MAX_ESP_DISTANCE = val
+        end)
+
+        Menu.AddHeader(ConfigTab, "Theme Customization")
+        Menu.AddButton(ConfigTab, "Cycle Box ESP Color", function()
+            boxColorIdx = (boxColorIdx % #COLOR_PRESETS) + 1
+            ESP_COLOR = COLOR_PRESETS[boxColorIdx].color
+            showToast("Theme Updated", "Box ESP set to " .. COLOR_PRESETS[boxColorIdx].name, "info")
+        end)
+        Menu.AddButton(ConfigTab, "Cycle Name Tag Color", function()
+            nameColorIdx = (nameColorIdx % #COLOR_PRESETS) + 1
+            ESP_NAME_COL = COLOR_PRESETS[nameColorIdx].color
+            showToast("Theme Updated", "Name Tag ESP set to " .. COLOR_PRESETS[nameColorIdx].name, "info")
+        end)
+
+        showToast("Paint And SEEK!", "All features loaded successfully!", "info")
     end
 },
 
@@ -920,6 +2370,16 @@ local SUPPORTED_GAMES = {
         end
     },
 }
+
+setmetatable(SUPPORTED_GAMES, {
+    __index = function(tbl, key)
+        for _, gameData in pairs(tbl) do
+            if type(gameData) == "table" and gameData.universeId == game.GameId then
+                return gameData
+            end
+        end
+    end
+})
 
 local GameName    = "Unknown Game"
 local GameIconId  = "rbxassetid://0"
@@ -1374,7 +2834,7 @@ showToast = function(title, body, kind)
 end
  
 local function showLoadPrompt(entry)
-	local isAlreadyInGame = (entry.placeId == game.PlaceId)
+	local isAlreadyInGame = (entry.placeId == game.PlaceId) or (entry.universeId and entry.universeId == game.GameId)
 
 	local Overlay = Instance.new("Frame")
 	Overlay.Name = "LoadPrompt"
@@ -1802,6 +3262,7 @@ NavHdr.Parent = Sidebar
 local TAB_DATA = {
 	{ text = "Home",  icon = "⌂", y = 44  },
 	{ text = "Games", icon = "◈", y = 84  },
+	{ text = "Universal", icon = "∞", y = 124 },
 }
 
 local tabBtns = {}
@@ -1857,6 +3318,294 @@ local function setTabActive(t, active)
 	tween(t.tlbl, FAST, { TextColor3 = active and C.accentText or C.textSec })
 	t.tlbl.Font = active and Enum.Font.GothamBold or Enum.Font.GothamSemibold
 end
+
+local function LaunchUniversalFPS()
+    local Menu = CreateGameMenu()
+    
+    local CombatTab   = Menu.CreateTab("Combat")
+    local VisualsTab  = Menu.CreateTab("Visuals")
+    local SettingsTab = Menu.CreateTab("Settings")
+    
+    local Players = game:GetService("Players")
+    local RunService = game:GetService("RunService")
+    local UserInputService = game:GetService("UserInputService")
+    local LocalPlayer = Players.LocalPlayer
+
+    local aimbotEnabled      = false
+    local wallCheckEnabled    = true
+    local teamCheckEnabled    = true
+    local aimSmoothness       = 5
+    local aimRadius          = 150
+    local fovVisible         = false
+    local aimTargetPart      = "Head"
+
+    local ESP_THICK        = 2
+    local MAX_ESP_DISTANCE = 1000
+    local boxEspEnabled    = false
+    local nameEspEnabled   = false
+
+    local COLOR_PRESETS = {
+        {name = "Crimson Red", color = Color3.fromRGB(255, 50, 50)},
+        {name = "Neon Mint",   color = Color3.fromRGB(0, 255, 140)},
+        {name = "Deep Blue",   color = Color3.fromRGB(0, 160, 255)},
+        {name = "Pure White",  color = Color3.fromRGB(255, 255, 255)}
+    }
+
+    local boxColorIdx  = 1 
+    local nameColorIdx = 4 
+    local ESP_COLOR      = COLOR_PRESETS[boxColorIdx].color
+    local ESP_NAME_COL   = COLOR_PRESETS[nameColorIdx].color
+
+    local mainRenderConn  = nil
+    local fovCircleDraw   = nil
+    local espRenderConn   = nil
+    local espData         = {}
+
+    pcall(function()
+        if Drawing and Drawing.new then
+            fovCircleDraw = Drawing.new("Circle")
+            fovCircleDraw.Thickness = 1
+            fovCircleDraw.NumSides = 60
+            fovCircleDraw.Filled = false
+            fovCircleDraw.Color = Color3.fromRGB(255, 255, 255)
+            fovCircleDraw.Visible = false
+        end
+    end)
+
+    function getClosestPlayerInstance()
+        local target = nil
+        local shortestDistance = math.huge
+        local camera = workspace.CurrentCamera
+        if not camera then return nil end
+        
+        local mouseLocation = UserInputService:GetMouseLocation()
+
+        for _, player in pairs(Players:GetPlayers()) do
+            if player == LocalPlayer then continue end
+            if teamCheckEnabled and player.Team == LocalPlayer.Team then continue end
+
+            local char = player.Character
+            local part = char and char:FindFirstChild(aimTargetPart)
+            local hum  = char and char:FindFirstChildOfClass("Humanoid")
+
+            if part and hum and hum.Health > 0 then
+                local screenPos, onScreen = camera:WorldToViewportPoint(part.Position)
+                if onScreen then
+                    local distance = (Vector2.new(screenPos.X, screenPos.Y) - mouseLocation).Magnitude
+                    if distance < shortestDistance and distance <= aimRadius then
+                        if wallCheckEnabled then
+                            local raycastParams = RaycastParams.new()
+                            raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+                            raycastParams.FilterDescendantsInstances = {LocalPlayer.Character, char, camera}
+                            raycastParams.IgnoreWater = true
+                            
+                            local rayResult = workspace:Raycast(camera.CFrame.Position, part.Position - camera.CFrame.Position, raycastParams)
+                            if rayResult and rayResult.Instance and not rayResult.Instance:IsDescendantOf(char) then 
+                                continue 
+                            end
+                        end
+
+                        target = part
+                        shortestDistance = distance
+                    end
+                end
+            end
+        end
+        return target
+    end
+
+    function getClosestPlayerScreen()
+        local targetPart = getClosestPlayerInstance()
+        if targetPart then
+            local camera = workspace.CurrentCamera
+            local screenPos, _ = camera:WorldToViewportPoint(targetPart.Position)
+            return screenPos
+        end
+        return nil
+    end
+
+    function systemUpdate()
+        local camera = workspace.CurrentCamera
+        if not camera then return end
+
+        if fovCircleDraw then
+            fovCircleDraw.Position = UserInputService:GetMouseLocation()
+            fovCircleDraw.Radius = aimRadius
+            fovCircleDraw.Visible = fovVisible
+        end
+
+        local isRightClickActive = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
+
+        if aimbotEnabled and isRightClickActive then
+            local targetScreenPos = getClosestPlayerScreen()
+            if targetScreenPos and mousemoverel then
+                local mouseLocation = UserInputService:GetMouseLocation()
+                local deltaX = (targetScreenPos.X - mouseLocation.X) / aimSmoothness
+                local deltaY = (targetScreenPos.Y - mouseLocation.Y) / aimSmoothness
+                mousemoverel(deltaX, deltaY)
+            end
+        end
+    end
+
+    function manageConnections()
+        if aimbotEnabled or fovVisible then
+            if not mainRenderConn then mainRenderConn = RunService.RenderStepped:Connect(systemUpdate) end
+        else
+            if mainRenderConn then mainRenderConn:Disconnect(); mainRenderConn = nil end
+            if fovCircleDraw then fovCircleDraw.Visible = false end
+        end
+    end
+
+    function buildESPFrame(player)
+        local holder = Instance.new("Frame")
+        holder.Name = "ESP_" .. player.Name
+        holder.BackgroundTransparency = 1
+        holder.BorderSizePixel = 0
+        holder.Size = UDim2.new(0, 0, 0, 0)
+        holder.Parent = ScreenGui
+
+        local function makeLine()
+            local f = Instance.new("Frame")
+            f.BackgroundColor3 = ESP_COLOR
+            f.BorderSizePixel = 0
+            f.ZIndex = 21
+            f.Parent = holder
+            return f
+        end
+
+        local nameTag = Instance.new("TextLabel")
+        nameTag.BackgroundTransparency = 1
+        nameTag.TextColor3 = ESP_NAME_COL
+        nameTag.TextStrokeTransparency = 0.5
+        nameTag.Font = Enum.Font.GothamBold
+        nameTag.TextSize = 11
+        nameTag.Text = player.Name
+        nameTag.Size = UDim2.new(0, 120, 0, 14)
+        nameTag.TextXAlignment = Enum.TextXAlignment.Center
+        nameTag.ZIndex = 22
+        nameTag.Visible = false
+        nameTag.Parent = ScreenGui
+
+        return { holder = holder, top = makeLine(), bot = makeLine(), left = makeLine(), right = makeLine(), nameTag = nameTag }
+    end
+
+    function destroyESPFor(player)
+        local d = espData[player]
+        if not d then return end
+        if d.holder  and d.holder.Parent  then d.holder:Destroy()  end
+        if d.nameTag and d.nameTag.Parent then d.nameTag:Destroy() end
+        espData[player] = nil
+    end
+
+    function updateESP()
+        local camera = workspace.CurrentCamera
+        if not camera then return end
+
+    for cachedPlayer, _ in pairs(espData) do
+        local success, exists = pcall(function()
+            return cachedPlayer and cachedPlayer.Parent and Players:FindFirstChild(cachedPlayer.Name)
+        end)
+        
+        if not success or not exists then
+            destroyESPFor(cachedPlayer)
+        end
+    end
+
+        for _, player in pairs(Players:GetPlayers()) do
+            if player == LocalPlayer then continue end
+
+            local char = player.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+
+            if not char or not hrp then
+                local d = espData[player]
+                if d then d.holder.Visible = false; d.nameTag.Visible = false end
+                continue
+            end
+
+            if not espData[player] then espData[player] = buildESPFrame(player) end
+            local d = espData[player]
+
+            local pos = hrp.Position
+            local topSP = camera:WorldToViewportPoint(pos + Vector3.new(0, 3.5, 0))
+            local botSP = camera:WorldToViewportPoint(pos - Vector3.new(0, 3.2, 0))
+
+            if topSP.Z > 0 and botSP.Z > 0 then
+                local topY = math.min(topSP.Y, botSP.Y)
+                local botY = math.max(topSP.Y, botSP.Y)
+                local h = botY - topY
+                local w = h * 0.45
+                local x = (topSP.X + botSP.X) / 2 - (w / 2)
+
+                local t = ESP_THICK
+                d.top.BackgroundColor3 = ESP_COLOR
+                d.bot.BackgroundColor3 = ESP_COLOR
+                d.left.BackgroundColor3 = ESP_COLOR
+                d.right.BackgroundColor3 = ESP_COLOR
+                d.nameTag.TextColor3 = ESP_NAME_COL
+
+                d.holder.Position = UDim2.new(0, x, 0, topY)
+                d.holder.Size = UDim2.new(0, w, 0, h)
+                d.holder.Visible = boxEspEnabled
+
+                if boxEspEnabled then
+                    d.top.Size = UDim2.new(1, 0, 0, t); d.top.Position = UDim2.new(0, 0, 0, 0)
+                    d.bot.Size = UDim2.new(1, 0, 0, t); d.bot.Position = UDim2.new(0, 0, 1, -t)
+                    d.left.Size = UDim2.new(0, t, 1, 0); d.left.Position = UDim2.new(0, 0, 0, 0)
+                    d.right.Size = UDim2.new(0, t, 1, 0); d.right.Position = UDim2.new(1, -t, 0, 0)
+                end
+
+                d.nameTag.Position = UDim2.new(0, x + (w / 2) - 60, 0, topY - 16)
+                d.nameTag.Visible = nameEspEnabled
+            else
+                d.holder.Visible = false
+                d.nameTag.Visible = false
+            end
+        end
+    end
+
+    function manageESPState()
+        if boxEspEnabled or nameEspEnabled then
+            if not espRenderConn then espRenderConn = RunService.RenderStepped:Connect(updateESP) end
+        else
+            if espRenderConn then espRenderConn:Disconnect(); espRenderConn = nil end
+            for player, _ in pairs(espData) do destroyESPFor(player) end
+            espData = {}
+        end
+    end
+
+    Menu.AddHeader(CombatTab, "Aim")
+    Menu.AddToggle(CombatTab, "Enable Aimbot", false, function(s) aimbotEnabled = s; manageConnections() end)
+    Menu.AddToggle(CombatTab, "Team Check", true, function(s) teamCheckEnabled = s end)
+    Menu.AddToggle(CombatTab, "Wall Check", true, function(s) wallCheckEnabled = s end)
+    Menu.AddToggle(CombatTab, "Show FOV Circle", false, function(s) fovVisible = s; manageConnections() end)
+    
+    Menu.AddHeader(CombatTab, "Target Selection")
+    for _, part in ipairs({"Head", "HumanoidRootPart", "UpperTorso"}) do
+        Menu.AddButton(CombatTab, "Aim Target: " .. part, function() aimTargetPart = part end)
+    end
+    Menu.AddSlider(CombatTab, "FOV Radius", 30, 500, aimRadius, function(v) aimRadius = v end)
+    Menu.AddSlider(CombatTab, "Aimbot Smoothness (Lower=Faster)", 1, 20, aimSmoothness, function(v) aimSmoothness = v end)
+
+    Menu.AddHeader(VisualsTab, "ESP")
+    Menu.AddToggle(VisualsTab, "2D Box ESP", false, function(state) boxEspEnabled = state; manageESPState() end)
+    Menu.AddToggle(VisualsTab, "Name ESP", false, function(state) nameEspEnabled = state; manageESPState() end)
+
+    Menu.AddHeader(SettingsTab, "ESP Configuration")
+    Menu.AddSlider(SettingsTab, "Line Thickness (px)", 1, 6, ESP_THICK, function(val) ESP_THICK = val end)
+    Menu.AddSlider(SettingsTab, "Max Render Distance", 100, 3000, MAX_ESP_DISTANCE, function(val) MAX_ESP_DISTANCE = val end)
+
+    local oldClose = Menu.OnClose or function() end
+    Menu.OnClose = function()
+        aimbotEnabled = false; fovVisible = false
+        manageConnections()
+        boxEspEnabled = false; nameEspEnabled = false; manageESPState()
+        if fovCircleDraw then pcall(function() fovCircleDraw:Destroy() end) end
+        oldClose()
+    end
+end
+
+-- end of functions
 
 local Container = Instance.new("Frame")
 Container.Size = UDim2.new(1, -155, 1, -52)
@@ -2024,7 +3773,7 @@ local maxPlayers    = Players.MaxPlayers
 local userId        = tostring(LocalPlayer.UserId)
 local accountAge    = tostring(LocalPlayer.AccountAge) .. " days"
 
-makeStatCard(0,           14,  0.34, -18, 196, "HUB VERSION",    "WesHub v1 Testing", C.textPri)
+makeStatCard(0,           14,  0.34, -18, 196, "HUB VERSION",    "WesHub v1.0", C.textPri)
 makeStatCard(0.34,         4,  0.33,  -8, 196, "PLACE ID",        tostring(PlaceId),   C.textSec)
 makeStatCard(0.67,        -4,  0.33, -10, 196, "USER ID",         userId,               C.textSec)
 makeStatCard(0,           14,  0.34, -18, 262, "ACCOUNT AGE",     accountAge,           C.amber)
@@ -2235,7 +3984,62 @@ for pid, entry in pairs(SUPPORTED_GAMES) do
 	i = i + 1
 end
 
-local pages = { Home_Page, Games_Page }
+local Universal_Page = Instance.new("Frame")
+Universal_Page.Size = UDim2.new(1, 0, 1, 0)
+Universal_Page.BackgroundTransparency = 1
+Universal_Page.Visible = false
+Universal_Page.Parent = Container
+
+local UnivCard = Instance.new("Frame")
+UnivCard.Size = UDim2.new(1, -28, 0, 120)
+UnivCard.Position = UDim2.new(0, 14, 0, 14)
+UnivCard.BackgroundColor3 = C.bg3
+UnivCard.BorderSizePixel = 0
+UnivCard.Parent = Universal_Page
+corner(UnivCard, 10)
+stroke(UnivCard, C.border)
+
+lbl(UnivCard, {
+	text  = "Universal FPS Script",
+	font  = Enum.Font.GothamBold,
+	size  = 14,
+	color = C.textPri,
+	sz    = UDim2.new(1, -24, 0, 20),
+	pos   = UDim2.new(0, 12, 0, 14),
+})
+
+lbl(UnivCard, {
+	text  = "Aimbot and ESP that can be used universally across most FPS games.",
+	size  = 11,
+	color = C.textSec,
+	sz    = UDim2.new(1, -24, 0, 16),
+	pos   = UDim2.new(0, 12, 0, 36),
+})
+
+local launchUnivBtn = Instance.new("TextButton")
+launchUnivBtn.Size = UDim2.new(0, 150, 0, 34)
+launchUnivBtn.Position = UDim2.new(0, 12, 0, 70)
+launchUnivBtn.BackgroundColor3 = C.accent
+launchUnivBtn.Text = "Launch Universal FPS"
+launchUnivBtn.TextColor3 = C.accentText
+launchUnivBtn.Font = Enum.Font.GothamBold
+launchUnivBtn.TextSize = 11
+launchUnivBtn.Parent = UnivCard
+corner(launchUnivBtn, 7)
+
+launchUnivBtn.MouseEnter:Connect(function()
+	TweenService:Create(launchUnivBtn, TweenInfo.new(0.15), { BackgroundColor3 = Color3.fromRGB(220, 220, 220) }):Play()
+end)
+launchUnivBtn.MouseLeave:Connect(function()
+	TweenService:Create(launchUnivBtn, TweenInfo.new(0.15), { BackgroundColor3 = C.accent }):Play()
+end)
+
+launchUnivBtn.MouseButton1Click:Connect(function()
+	showToast("Universal Script", "Opening Universal Menu...", "info")
+	LaunchUniversalFPS()
+end)
+
+local pages = { Home_Page, Games_Page, Universal_Page }
 
 local function switchTab(index)
 	for idx, t in ipairs(tabBtns) do setTabActive(t, idx == index) end
