@@ -1,0 +1,626 @@
+local CreateGameMenu, showToast, C, ScreenGui = ...
+
+local Menu = CreateGameMenu()
+local AimTab    = Menu.CreateTab("Aimbot")
+local VisualTab = Menu.CreateTab("Visuals")
+local ConfigTab = Menu.CreateTab("Settings")
+
+local RunService       = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Players          = game:GetService("Players")
+local LocalPlayer      = Players.LocalPlayer
+
+local espThickness     = 2
+local maxEspDistance   = 1000
+local skelHeadSize     = 140 
+
+local aimbotEnabled    = false
+local wallCheckEnabled = false
+local aimSmoothness    = 1
+local aimRadius        = 120
+local fovVisible       = false
+
+local aimTargetPart    = "Head"
+local isRightClickHolding = false 
+
+local colorPreset = {
+    {name = "Crimson Red", color = Color3.fromRGB(255, 50, 50)},
+    {name = "Neon Mint",   color = Color3.fromRGB(0, 255, 140)},
+    {name = "Deep Blue",   color = Color3.fromRGB(0, 160, 255)},
+    {name = "Hot Pink",    color = Color3.fromRGB(255, 50, 180)},
+    {name = "Bright Gold", color = Color3.fromRGB(255, 215, 0)},
+    {name = "Pure White",  color = Color3.fromRGB(255, 255, 255)}
+}
+
+local boxColorIdx  = 1 
+local skelColorIdx = 2 
+local nameColorIdx = 6 
+
+local espColor      = colorPreset[boxColorIdx].color
+local espSkeletonColor = colorPreset[skelColorIdx].color
+local espNameColor   = colorPreset[nameColorIdx].color
+
+local boxEspEnabled  = false
+local nameEspEnabled = false
+local skelEspEnabled = false
+
+local function isPlayerAliveAndActive(player)
+    if not player or player == LocalPlayer then return false end
+    
+    local char = player.Character
+    if not char or not char:IsDescendantOf(workspace) then return false end
+    
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then return false end
+    
+    local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head")
+    if not hrp then return false end
+    
+    return true
+end
+
+Menu.AddHeader(AimTab, "Targeting Mechanisms")
+
+Menu.AddToggle(AimTab, "Aimbot", false, function(state)
+    aimbotEnabled = state
+    manageAimEngineState()
+end)
+
+Menu.AddToggle(AimTab, "Wall Check", false, function(state)
+    wallCheckEnabled = state
+end)
+
+Menu.AddToggle(AimTab, "Show FOV Circle", false, function(state)
+    fovVisible = state
+end)
+
+Menu.AddSlider(AimTab, "FOV", 30, 500, aimRadius, function(val)
+    aimRadius = val
+end)
+
+Menu.AddSlider(AimTab, "Aim Smoothness", 1, 20, aimSmoothness, function(val)
+    aimSmoothness = val
+end)
+
+Menu.AddHeader(AimTab, "Target Priority Selection")
+
+Menu.AddButton(AimTab, "Target: Head", function()
+    aimTargetPart = "Head"
+    showToast("Aim Target", "Now targeting: Head", "info")
+end)
+
+Menu.AddButton(AimTab, "Target: Torso", function()
+    aimTargetPart = "HumanoidRootPart"
+    showToast("Aim Target", "Now targeting: Torso", "info")
+end)
+
+Menu.AddHeader(VisualTab, "Player ESP Main Switches")
+
+Menu.AddToggle(VisualTab, "2D Box ESP", false, function(state)
+    boxEspEnabled = state
+    manageESPState()
+end)
+
+Menu.AddToggle(VisualTab, "Name ESP", false, function(state)
+    nameEspEnabled = state
+    manageESPState()
+end)
+
+Menu.AddToggle(VisualTab, "Skeleton ESP", false, function(state)
+    skelEspEnabled = state
+    manageESPState()
+end)
+
+Menu.AddHeader(ConfigTab, "ESP Configuration")
+
+Menu.AddSlider(ConfigTab, "Line Thickness (px)", 1, 6, espThickness, function(val)
+    espThickness = val
+end)
+
+Menu.AddSlider(ConfigTab, "Max Render Distance (studs)", 100, 3000, maxEspDistance, function(val)
+    maxEspDistance = val
+end)
+
+Menu.AddSlider(ConfigTab, "Skeleton Head Size", 50, 300, skelHeadSize, function(val)
+    skelHeadSize = val
+end)
+
+Menu.AddHeader(ConfigTab, "Theme Customization")
+
+Menu.AddButton(ConfigTab, "Cycle Box ESP Color", function()
+    boxColorIdx = (boxColorIdx % #colorPreset) + 1
+    espColor = colorPreset[boxColorIdx].color
+end)
+
+Menu.AddButton(ConfigTab, "Cycle Skeleton Color", function()
+    skelColorIdx = (skelColorIdx % #colorPreset) + 1
+    espSkeletonColor = colorPreset[skelColorIdx].color
+end)
+
+Menu.AddButton(ConfigTab, "Cycle Name Tag Color", function()
+    nameColorIdx = (nameColorIdx % #colorPreset) + 1
+    espNameColor = colorPreset[nameColorIdx].color
+end)
+
+local aimRenderConn = nil
+local fovCircleDraw = nil
+local inputBeganConn = nil
+local inputEndedConn = nil
+
+pcall(function()
+    if Drawing and Drawing.new then
+        fovCircleDraw = Drawing.new("Circle")
+        fovCircleDraw.Thickness = 1
+        fovCircleDraw.NumSides = 60
+        fovCircleDraw.Filled = false
+        fovCircleDraw.Color = Color3.fromRGB(255, 255, 255)
+        fovCircleDraw.Visible = false
+    end
+end)
+
+local function getClosestPlayerToMouth()
+    local target = nil
+    local shortestDistance = math.huge
+    local camera = workspace.CurrentCamera
+    local mouseLocation = UserInputService:GetMouseLocation()
+
+    if not camera then return nil end
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if not isPlayerAliveAndActive(player) then continue end
+
+        local char = player.Character
+        local part = char and char:FindFirstChild(aimTargetPart)
+
+        if part then
+            local screenPos, onScreen = camera:WorldToViewportPoint(part.Position)
+            if onScreen then
+                local distance = (Vector2.new(screenPos.X, screenPos.Y) - mouseLocation).Magnitude
+                if distance < shortestDistance and distance <= aimRadius then
+                    
+                    if wallCheckEnabled then
+                        local isBlocked = false
+                        local origin = camera.CFrame.Position
+                        local direction = (part.Position - origin)
+                        
+                        local raycastParams = RaycastParams.new()
+                        raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+                        local ignoreList = {LocalPlayer.Character, char, camera}
+                        raycastParams.FilterDescendantsInstances = ignoreList
+                        raycastParams.IgnoreWater = true
+
+                        while true do
+                            local raycastResult = workspace:Raycast(origin, direction, raycastParams)
+                            if not raycastResult then
+                                break 
+                            end
+
+                            local hitInstance = raycastResult.Instance
+                            if hitInstance and (hitInstance.Transparency > 0.5 or hitInstance.CanCollide == false) then
+                                table.insert(ignoreList, hitInstance)
+                                raycastParams.FilterDescendantsInstances = ignoreList
+                            else
+                                isBlocked = true
+                                break
+                            end
+                        end
+
+                        if isBlocked then 
+                            continue 
+                        end
+                    end
+
+                    target = part
+                    shortestDistance = distance
+                end
+            end
+        end
+    end
+    return target
+end
+
+local function handleAimSystemUpdate()
+    local camera = workspace.CurrentCamera
+    if not camera then return end
+
+    if fovCircleDraw then
+        fovCircleDraw.Position = UserInputService:GetMouseLocation()
+        fovCircleDraw.Radius = aimRadius
+        fovCircleDraw.Visible = fovVisible
+    end
+
+    if not aimbotEnabled then return end
+    if not isRightClickHolding then return end
+
+    local targetPart = getClosestPlayerToMouth()
+    if targetPart then
+        local lookCFrame = CFrame.new(camera.CFrame.Position, targetPart.Position)
+        if aimSmoothness <= 1 then
+            camera.CFrame = lookCFrame
+        else
+            camera.CFrame = camera.CFrame:Lerp(lookCFrame, 1 / aimSmoothness)
+        end
+    end
+end
+
+function manageAimEngineState()
+    if aimbotEnabled or fovVisible then
+        if not aimRenderConn then
+            aimRenderConn = RunService.RenderStepped:Connect(handleAimSystemUpdate)
+        end
+        if not inputBeganConn then
+            inputBeganConn = UserInputService.InputBegan:Connect(function(input, processed)
+                if input.UserInputType == Enum.UserInputType.MouseButton2 then
+                    isRightClickHolding = true
+                end
+            end)
+        end
+        if not inputEndedConn then
+            inputEndedConn = UserInputService.InputEnded:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton2 then
+                    isRightClickHolding = false
+                end
+            end)
+        end
+    else
+        if aimRenderConn then
+            aimRenderConn:Disconnect()
+            aimRenderConn = nil
+        end
+        if inputBeganConn then inputBeganConn:Disconnect(); inputBeganConn = nil end
+        if inputEndedConn then inputEndedConn:Disconnect(); inputEndedConn = nil end
+        isRightClickHolding = false
+        if fovCircleDraw then
+            fovCircleDraw.Visible = false
+        end
+    end
+end
+
+local baseCleanUp = Menu.OnClose or function() end
+Menu.OnClose = function()
+    aimbotEnabled = false
+    fovVisible = false
+    manageAimEngineState()
+    if fovCircleDraw then pcall(function() fovCircleDraw:Destroy() end) end
+    baseCleanUp()
+end
+
+local espData = {}
+local espRenderConn   = nil
+local espAddedConn    = nil
+local espRemovingConn = nil
+
+local function createAbsoluteLine()
+    local line = Instance.new("Frame")
+    line.BackgroundColor3 = espSkeletonColor
+    line.BorderSizePixel   = 0
+    line.ZIndex            = 19
+    line.AnchorPoint       = Vector2.new(0.5, 0.5)
+    line.Visible           = false
+    line.Parent            = ScreenGui
+    return line
+end
+
+local function createHeadDot()
+    local dot = Instance.new("Frame")
+    dot.BackgroundColor3 = espSkeletonColor
+    dot.BorderSizePixel   = 0
+    dot.ZIndex            = 20
+    dot.AnchorPoint       = Vector2.new(0.5, 0.5)
+    dot.Visible           = false
+    dot.Parent            = ScreenGui
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(1, 0)
+    corner.Parent = dot
+    return dot
+end
+
+local function buildESPFrame(player)
+    local holder = Instance.new("Frame")
+    holder.Name                   = "ESP_" .. player.Name
+    holder.BackgroundTransparency = 1
+    holder.BorderSizePixel        = 0
+    holder.Size                   = UDim2.new(0, 0, 0, 0)
+    holder.ClipsDescendants       = false
+    holder.ZIndex                 = 20
+    holder.Parent                 = ScreenGui
+
+    local function makeLine()
+        local f = Instance.new("Frame")
+        f.BackgroundColor3  = espColor
+        f.BorderSizePixel   = 0
+        f.ZIndex            = 21
+        f.Parent            = holder
+        return f
+    end
+
+    local nameTag = Instance.new("TextLabel")
+    nameTag.BackgroundTransparency = 1
+    nameTag.TextColor3             = espNameColor
+    nameTag.TextStrokeTransparency = 0.5
+    nameTag.TextStrokeColor3       = Color3.new(0, 0, 0)
+    nameTag.Font                   = Enum.Font.GothamBold
+    nameTag.TextSize               = 11
+    nameTag.Text                   = player.Name
+    nameTag.Size                   = UDim2.new(0, 120, 0, 14)
+    nameTag.TextXAlignment         = Enum.TextXAlignment.Center
+    nameTag.ZIndex                 = 22
+    nameTag.Visible                = false
+    nameTag.Parent                 = ScreenGui
+
+    local bones = {
+        HeadDot          = createHeadDot(),
+        HeadToTorso      = createAbsoluteLine(),
+        TorsoToLeftArm   = createAbsoluteLine(),
+        TorsoToRightArm  = createAbsoluteLine(),
+        LeftArmToForearm = createAbsoluteLine(),  
+        RightArmToForearm= createAbsoluteLine(),  
+        TorsoToLeftLeg   = createAbsoluteLine(),
+        TorsoToRightLeg  = createAbsoluteLine(),
+        LeftLegToShin    = createAbsoluteLine(),
+        RightLegToShin   = createAbsoluteLine(),
+        LowerTorso       = createAbsoluteLine(),
+    }
+
+    return {
+        holder  = holder,
+        top     = makeLine(),
+        bot     = makeLine(),
+        left    = makeLine(),
+        right   = makeLine(),
+        nameTag = nameTag,
+        bones   = bones,
+    }
+end
+
+function destroyESPFor(player)
+    local d = espData[player]
+    if not d then return end
+    if d.holder  and d.holder.Parent  then pcall(function() d.holder:Destroy() end) end
+    if d.nameTag and d.nameTag.Parent then pcall(function() d.nameTag:Destroy() end) end
+    if d.bones then
+        for _, object in pairs(d.bones) do
+            if object and object.Parent then pcall(function() object:Destroy() end) end
+        end
+    end
+    espData[player] = nil
+end
+
+local function destroyAllESP()
+    for player, _ in pairs(espData) do
+        destroyESPFor(player)
+    end
+    espData = {}
+end
+
+local topOffset = 3.5   
+local botOffset = 3.2   
+local widthRatio = 0.45 
+
+local function getScreenBounds(char, camera)
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+
+    local distance = (camera.CFrame.Position - hrp.Position).Magnitude
+    if distance > maxEspDistance then return nil end
+
+    local pos = hrp.Position
+    local topSP = camera:WorldToViewportPoint(pos + Vector3.new(0,  topOffset, 0))
+    local botSP = camera:WorldToViewportPoint(pos - Vector3.new(0,  botOffset, 0))
+
+    if topSP.Z <= 0 or botSP.Z <= 0 then return nil end
+
+    local topY = math.min(topSP.Y, botSP.Y)
+    local botY = math.max(topSP.Y, botSP.Y)
+    local screenH = botY - topY
+    if screenH < 5 then return nil end  
+
+    local screenW = screenH * widthRatio
+    local centerX = (topSP.X + botSP.X) / 2
+
+    local pad = 2
+    return  centerX - screenW / 2 - pad,
+            topY - pad,
+            screenW + pad * 2,
+            screenH + pad * 2
+end
+
+local function drawAbsoluteBone3D(lineUI, posA, posB, camera)
+    if not posA or not posB or not skelEspEnabled then 
+        lineUI.Visible = false 
+        return 
+    end
+
+    local outA, onScreenA = camera:WorldToViewportPoint(posA)
+    local outB, onScreenB = camera:WorldToViewportPoint(posB)
+
+    if onScreenA and onScreenB and outA.Z > 0 and outB.Z > 0 then
+        local startPos = Vector2.new(outA.X, outA.Y)
+        local endPos = Vector2.new(outB.X, outB.Y)
+        
+        local distance = (endPos - startPos).Magnitude
+        local midpoint = (startPos + endPos) / 2
+
+        lineUI.Size = UDim2.new(0, espThickness, 0, distance)
+        lineUI.Position = UDim2.new(0, midpoint.X, 0, midpoint.Y)
+        
+        local angle = math.atan2(endPos.Y - startPos.Y, endPos.X - startPos.X)
+        lineUI.Rotation = math.deg(angle) - 90
+        lineUI.Visible = true
+    else
+        lineUI.Visible = false
+    end
+end
+
+local function drawHeadNode(dotUI, headPart, camera)
+    if not headPart or not skelEspEnabled then
+        dotUI.Visible = false
+        return
+    end
+
+    local out, onScreen = camera:WorldToViewportPoint(headPart.Position)
+    if onScreen and out.Z > 0 then
+        local size = math.clamp(math.round(skelHeadSize / out.Z), 6, 45)
+        dotUI.Size = UDim2.new(0, size, 0, size)
+        dotUI.Position = UDim2.new(0, out.X, 0, out.Y)
+        dotUI.Visible = true
+    else
+        dotUI.Visible = false
+    end
+end
+
+local function updateESP()
+    local camera = workspace.CurrentCamera
+    if not camera then return end
+    for cachedPlayer, _ in pairs(espData) do
+        if not Players:FindFirstChild(cachedPlayer.Name) then
+            destroyESPFor(cachedPlayer)
+        end
+    end
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+
+        local char = player.Character
+        if not isPlayerAliveAndActive(player) then
+            local d = espData[player]
+            if d then
+                d.holder.Visible  = false
+                d.nameTag.Visible = false
+                for _, b in pairs(d.bones) do b.Visible = false end
+            end
+            continue
+        end
+
+        if not espData[player] then
+            espData[player] = buildESPFrame(player)
+        end
+        local d = espData[player]
+
+        local x, y, w, h = getScreenBounds(char, camera)
+
+        if not x then
+            d.holder.Visible  = false
+            d.nameTag.Visible = false
+            for _, b in pairs(d.bones) do b.Visible = false end
+            continue
+        end
+
+        local t = espThickness
+
+        d.top.BackgroundColor3 = espColor
+        d.bot.BackgroundColor3 = espColor
+        d.left.BackgroundColor3 = espColor
+        d.right.BackgroundColor3 = espColor
+        d.nameTag.TextColor3 = espNameColor
+
+        for _, boneObj in pairs(d.bones) do
+            boneObj.BackgroundColor3 = espSkeletonColor
+        end
+
+        d.holder.Position = UDim2.new(0, x, 0, y)
+        d.holder.Size     = UDim2.new(0, w, 0, h)
+        d.holder.Visible  = boxEspEnabled
+
+        if boxEspEnabled then
+            d.top.Position = UDim2.new(0, 0, 0, 0)
+            d.top.Size = UDim2.new(1, 0, 0, t)
+            d.bot.Position = UDim2.new(0, 0, 1, -t)
+            d.bot.Size = UDim2.new(1, 0, 0, t)
+            d.left.Position = UDim2.new(0, 0, 0, 0)
+            d.left.Size = UDim2.new(0, t, 1, 0)
+            d.right.Position = UDim2.new(1, -t, 0, 0)
+            d.right.Size = UDim2.new(0, t, 1, 0)
+        end
+
+        d.nameTag.Position = UDim2.new(0, x + w / 2 - 60, 0, y - 16)
+        d.nameTag.Visible  = nameEspEnabled
+
+        if skelEspEnabled then
+            local head = char:FindFirstChild("Head")
+            local torso = char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+            local lowerTorso = char:FindFirstChild("LowerTorso")
+            
+            local RigsFolder = char:FindFirstChild("Rigs") or char:FindFirstChild("Limbs")
+            
+            local lArm = char:FindFirstChild("Left Arm") or char:FindFirstChild("LeftUpperArm") or (RigsFolder and RigsFolder:FindFirstChild("Left Arm"))
+            local lForearm = char:FindFirstChild("LeftLowerArm")
+            local rArm = char:FindFirstChild("Right Arm") or char:FindFirstChild("RightUpperArm") or (RigsFolder and RigsFolder:FindFirstChild("Right Arm"))
+            local rForearm = char:FindFirstChild("RightLowerArm")
+            
+            local lLeg = char:FindFirstChild("Left Leg") or char:FindFirstChild("LeftUpperLeg") or (RigsFolder and RigsFolder:FindFirstChild("Left Leg"))
+            local lShin = char:FindFirstChild("LeftLowerLeg")
+            local rLeg = char:FindFirstChild("Right Leg") or char:FindFirstChild("RightUpperLeg") or (RigsFolder and RigsFolder:FindFirstChild("Right Leg"))
+            local rShin = char:FindFirstChild("RightLowerLeg")
+
+            drawHeadNode(d.bones.HeadDot, head, camera)
+
+            if head and torso then
+                drawAbsoluteBone3D(d.bones.HeadToTorso, head.Position, torso.Position, camera)
+
+                if lowerTorso then
+                    drawAbsoluteBone3D(d.bones.LowerTorso, torso.Position, lowerTorso.Position, camera)
+                    if lArm     then drawAbsoluteBone3D(d.bones.TorsoToLeftArm, torso.Position, lArm.Position, camera) end
+                    if lForearm then drawAbsoluteBone3D(d.bones.LeftArmToForearm, lArm.Position, lForearm.Position, camera) end
+                    if rArm     then drawAbsoluteBone3D(d.bones.TorsoToRightArm, torso.Position, rArm.Position, camera) end
+                    if rForearm then drawAbsoluteBone3D(d.bones.RightArmToForearm, rArm.Position, rForearm.Position, camera) end
+                    if lLeg  then drawAbsoluteBone3D(d.bones.TorsoToLeftLeg, lowerTorso.Position, lLeg.Position, camera) end
+                    if lShin then drawAbsoluteBone3D(d.bones.LeftLegToShin, lLeg.Position, lShin.Position, camera) end
+                    if rLeg  then drawAbsoluteBone3D(d.bones.TorsoToRightLeg, lowerTorso.Position, rLeg.Position, camera) end
+                    if rShin then drawAbsoluteBone3D(d.bones.RightLegToShin, rLeg.Position, rShin.Position, camera) end
+                else
+                    d.bones.LowerTorso.Visible = false
+                    
+                    if lArm then
+                        local armTop = lArm.Position + Vector3.new(0, 1, 0)
+                        local armBot = lArm.Position - Vector3.new(0, 1.4, 0)
+                        drawAbsoluteBone3D(d.bones.TorsoToLeftArm, torso.Position + Vector3.new(-1, 1, 0), armTop, camera)
+                        drawAbsoluteBone3D(d.bones.LeftArmToForearm, armTop, armBot, camera)
+                    end
+                    if rArm then
+                        local armTop = rArm.Position + Vector3.new(0, 1, 0)
+                        local armBot = rArm.Position - Vector3.new(0, 1.4, 0)
+                        drawAbsoluteBone3D(d.bones.TorsoToRightArm, torso.Position + Vector3.new(1, 1, 0), armTop, camera)
+                        drawAbsoluteBone3D(d.bones.RightArmToForearm, armTop, armBot, camera)
+                    end
+                    if lLeg then
+                        local legTop = lLeg.Position + Vector3.new(0, 1, 0)
+                        local legBot = lLeg.Position - Vector3.new(0, 1.2, 0)
+                        drawAbsoluteBone3D(d.bones.TorsoToLeftLeg, torso.Position + Vector3.new(-0.5, -1, 0), legTop, camera)
+                        drawAbsoluteBone3D(d.bones.LeftLegToShin, legTop, legBot, camera)
+                    end
+                    if rLeg then
+                        local legTop = rLeg.Position + Vector3.new(0, 1, 0)
+                        local legBot = rLeg.Position - Vector3.new(0, 1.2, 0)
+                        drawAbsoluteBone3D(d.bones.TorsoToRightLeg, torso.Position + Vector3.new(0.5, -1, 0), legTop, camera)
+                        drawAbsoluteBone3D(d.bones.RightLegToShin, legTop, legBot, camera)
+                    end
+                end
+            end
+        else
+            for _, b in pairs(d.bones) do b.Visible = false end
+        end
+    end
+end
+
+function manageESPState()
+    if boxEspEnabled or nameEspEnabled or skelEspEnabled then
+        if not espRenderConn then
+            espRenderConn = RunService.RenderStepped:Connect(updateESP)
+        end
+        if not espAddedConn then
+            espAddedConn = Players.PlayerAdded:Connect(function(p) end)
+        end
+        if not espRemovingConn then
+            espRemovingConn = Players.PlayerRemoving:Connect(function(p)
+                destroyESPFor(p)
+            end)
+        end
+    else
+        if espRenderConn   then espRenderConn:Disconnect(); espRenderConn   = nil end
+        if espAddedConn    then espAddedConn:Disconnect(); espAddedConn    = nil end
+        if espRemovingConn then espRemovingConn:Disconnect(); espRemovingConn = nil end
+        destroyAllESP()
+    end
+end
