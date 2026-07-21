@@ -1,6 +1,135 @@
 local CreateGameMenu, showToast, C, ScreenGui = ...
 
+if type(CreateGameMenu) ~= "function" then
+    warn("[WesHub] CreateGameMenu was not passed to this script!")
+    return
+end
+
 local Menu = CreateGameMenu()
+
+-- Custom UI element builders styled to match the hub theme
+local function AddToggle(parent, text, defaultState, callback)
+    local state = defaultState
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 0, 36)
+    btn.BackgroundColor3 = C.cardBg
+    btn.BorderSizePixel = 0
+    btn.Font = Enum.Font.GothamBold
+    btn.Text = text .. " — " .. (state and "[ ON ]" or "[ OFF ]")
+    btn.TextColor3 = state and C.green or C.textSec
+    btn.TextSize = 11
+    btn.AutoButtonColor = false
+    btn.Parent = parent
+
+    local corner = Instance.new("UICorner", btn)
+    corner.CornerRadius = UDim.new(0, 6)
+
+    local stroke = Instance.new("UIStroke", btn)
+    stroke.Color = C.border
+    stroke.Thickness = 1
+
+    btn.MouseButton1Click:Connect(function()
+        state = not state
+        btn.Text = text .. " — " .. (state and "[ ON ]" or "[ OFF ]")
+        btn.TextColor3 = state and C.green or C.textSec
+        callback(state)
+    end)
+end
+
+local function AddSlider(parent, text, min, max, defaultVal, callback)
+    local val = defaultVal
+
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, 0, 0, 48)
+    frame.BackgroundColor3 = C.cardBg
+    frame.BorderSizePixel = 0
+    frame.Parent = parent
+
+    local corner = Instance.new("UICorner", frame)
+    corner.CornerRadius = UDim.new(0, 6)
+
+    local stroke = Instance.new("UIStroke", frame)
+    stroke.Color = C.border
+    stroke.Thickness = 1
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, -120, 0, 20)
+    label.Position = UDim2.new(0, 12, 0, 4)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.GothamBold
+    label.Text = text
+    label.TextColor3 = C.textPri
+    label.TextSize = 11
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = frame
+
+    local valLabel = Instance.new("TextLabel")
+    valLabel.Size = UDim2.new(0, 100, 0, 20)
+    valLabel.Position = UDim2.new(1, -112, 0, 4)
+    valLabel.BackgroundTransparency = 1
+    valLabel.Font = Enum.Font.GothamBold
+    valLabel.Text = tostring(val)
+    valLabel.TextColor3 = C.accentGlow
+    valLabel.TextSize = 11
+    valLabel.TextXAlignment = Enum.TextXAlignment.Right
+    valLabel.Parent = frame
+
+    local minusBtn = Instance.new("TextButton")
+    minusBtn.Size = UDim2.new(0, 24, 0, 20)
+    minusBtn.Position = UDim2.new(0, 12, 0, 24)
+    minusBtn.BackgroundColor3 = C.bg3
+    minusBtn.Text = "-"
+    minusBtn.TextColor3 = C.textPri
+    minusBtn.Font = Enum.Font.GothamBold
+    minusBtn.Parent = frame
+    local mCorner = Instance.new("UICorner", minusBtn)
+    mCorner.CornerRadius = UDim.new(0, 4)
+
+    local plusBtn = Instance.new("TextButton")
+    plusBtn.Size = UDim2.new(0, 24, 0, 20)
+    plusBtn.Position = UDim2.new(1, -36, 0, 24)
+    plusBtn.BackgroundColor3 = C.bg3
+    plusBtn.Text = "+"
+    plusBtn.TextColor3 = C.textPri
+    plusBtn.Font = Enum.Font.GothamBold
+    plusBtn.Parent = frame
+    local pCorner = Instance.new("UICorner", plusBtn)
+    pCorner.CornerRadius = UDim.new(0, 4)
+
+    local barBg = Instance.new("Frame")
+    barBg.Size = UDim2.new(1, -84, 0, 6)
+    barBg.Position = UDim2.new(0, 42, 0, 31)
+    barBg.BackgroundColor3 = C.bg3
+    barBg.BorderSizePixel = 0
+    barBg.Parent = frame
+
+    local barFill = Instance.new("Frame")
+    local pct = (val - min) / (max - min)
+    barFill.Size = UDim2.new(pct, 0, 1, 0)
+    barFill.BackgroundColor3 = C.accent
+    barFill.BorderSizePixel = 0
+    barFill.Parent = barBg
+
+    local function updateVal(newVal)
+        val = math.clamp(newVal, min, max)
+        valLabel.Text = tostring(val)
+        local p = (val - min) / (max - min)
+        barFill.Size = UDim2.new(p, 0, 1, 0)
+        callback(val)
+    end
+
+    minusBtn.MouseButton1Click:Connect(function()
+        local step = (max - min) >= 100 and 10 or 1
+        updateVal(val - step)
+    end)
+
+    plusBtn.MouseButton1Click:Connect(function()
+        local step = (max - min) >= 100 and 10 or 1
+        updateVal(val + step)
+    end)
+end
+
+-- Create tabs
 local AimTab    = Menu.CreateTab("Aimbot")
 local VisualTab = Menu.CreateTab("Visuals")
 local ConfigTab = Menu.CreateTab("Settings")
@@ -36,9 +165,9 @@ local boxColorIdx  = 1
 local skelColorIdx = 2 
 local nameColorIdx = 6 
 
-local espColor      = colorPreset[boxColorIdx].color
+local espColor          = colorPreset[boxColorIdx].color
 local espSkeletonColor = colorPreset[skelColorIdx].color
-local espNameColor   = colorPreset[nameColorIdx].color
+local espNameColor     = colorPreset[nameColorIdx].color
 
 local boxEspEnabled  = false
 local nameEspEnabled = false
@@ -59,26 +188,29 @@ local function isPlayerAliveAndActive(player)
     return true
 end
 
+-- =======================================================
+-- AIMBOT TAB
+-- =======================================================
 Menu.AddHeader(AimTab, "Targeting Mechanisms")
 
-Menu.AddToggle(AimTab, "Aimbot", false, function(state)
+AddToggle(AimTab, "Aimbot", false, function(state)
     aimbotEnabled = state
     manageAimEngineState()
 end)
 
-Menu.AddToggle(AimTab, "Wall Check", false, function(state)
+AddToggle(AimTab, "Wall Check", false, function(state)
     wallCheckEnabled = state
 end)
 
-Menu.AddToggle(AimTab, "Show FOV Circle", false, function(state)
+AddToggle(AimTab, "Show FOV Circle", false, function(state)
     fovVisible = state
 end)
 
-Menu.AddSlider(AimTab, "FOV", 30, 500, aimRadius, function(val)
+AddSlider(AimTab, "FOV", 30, 500, aimRadius, function(val)
     aimRadius = val
 end)
 
-Menu.AddSlider(AimTab, "Aim Smoothness", 1, 20, aimSmoothness, function(val)
+AddSlider(AimTab, "Aim Smoothness", 1, 20, aimSmoothness, function(val)
     aimSmoothness = val
 end)
 
@@ -86,42 +218,48 @@ Menu.AddHeader(AimTab, "Target Priority Selection")
 
 Menu.AddButton(AimTab, "Target: Head", function()
     aimTargetPart = "Head"
-    showToast("Aim Target", "Now targeting: Head", "info")
+    if showToast then showToast("Aim Target", "Now targeting: Head", "info") end
 end)
 
 Menu.AddButton(AimTab, "Target: Torso", function()
     aimTargetPart = "HumanoidRootPart"
-    showToast("Aim Target", "Now targeting: Torso", "info")
+    if showToast then showToast("Aim Target", "Now targeting: Torso", "info") end
 end)
 
+-- =======================================================
+-- VISUALS TAB
+-- =======================================================
 Menu.AddHeader(VisualTab, "Player ESP Main Switches")
 
-Menu.AddToggle(VisualTab, "2D Box ESP", false, function(state)
+AddToggle(VisualTab, "2D Box ESP", false, function(state)
     boxEspEnabled = state
     manageESPState()
 end)
 
-Menu.AddToggle(VisualTab, "Name ESP", false, function(state)
+AddToggle(VisualTab, "Name ESP", false, function(state)
     nameEspEnabled = state
     manageESPState()
 end)
 
-Menu.AddToggle(VisualTab, "Skeleton ESP", false, function(state)
+AddToggle(VisualTab, "Skeleton ESP", false, function(state)
     skelEspEnabled = state
     manageESPState()
 end)
 
+-- =======================================================
+-- SETTINGS TAB
+-- =======================================================
 Menu.AddHeader(ConfigTab, "ESP Configuration")
 
-Menu.AddSlider(ConfigTab, "Line Thickness (px)", 1, 6, espThickness, function(val)
+AddSlider(ConfigTab, "Line Thickness (px)", 1, 6, espThickness, function(val)
     espThickness = val
 end)
 
-Menu.AddSlider(ConfigTab, "Max Render Distance (studs)", 100, 3000, maxEspDistance, function(val)
+AddSlider(ConfigTab, "Max Render Distance (studs)", 100, 3000, maxEspDistance, function(val)
     maxEspDistance = val
 end)
 
-Menu.AddSlider(ConfigTab, "Skeleton Head Size", 50, 300, skelHeadSize, function(val)
+AddSlider(ConfigTab, "Skeleton Head Size", 50, 300, skelHeadSize, function(val)
     skelHeadSize = val
 end)
 
@@ -130,18 +268,24 @@ Menu.AddHeader(ConfigTab, "Theme Customization")
 Menu.AddButton(ConfigTab, "Cycle Box ESP Color", function()
     boxColorIdx = (boxColorIdx % #colorPreset) + 1
     espColor = colorPreset[boxColorIdx].color
+    if showToast then showToast("Color Changed", "Box Color: " .. colorPreset[boxColorIdx].name, "info") end
 end)
 
 Menu.AddButton(ConfigTab, "Cycle Skeleton Color", function()
     skelColorIdx = (skelColorIdx % #colorPreset) + 1
     espSkeletonColor = colorPreset[skelColorIdx].color
+    if showToast then showToast("Color Changed", "Skeleton Color: " .. colorPreset[skelColorIdx].name, "info") end
 end)
 
 Menu.AddButton(ConfigTab, "Cycle Name Tag Color", function()
     nameColorIdx = (nameColorIdx % #colorPreset) + 1
     espNameColor = colorPreset[nameColorIdx].color
+    if showToast then showToast("Color Changed", "Name Color: " .. colorPreset[nameColorIdx].name, "info") end
 end)
 
+-- =======================================================
+-- LOGIC & ENGINE
+-- =======================================================
 local aimRenderConn = nil
 local fovCircleDraw = nil
 local inputBeganConn = nil
@@ -274,15 +418,6 @@ function manageAimEngineState()
             fovCircleDraw.Visible = false
         end
     end
-end
-
-local baseCleanUp = Menu.OnClose or function() end
-Menu.OnClose = function()
-    aimbotEnabled = false
-    fovVisible = false
-    manageAimEngineState()
-    if fovCircleDraw then pcall(function() fovCircleDraw:Destroy() end) end
-    baseCleanUp()
 end
 
 local espData = {}
