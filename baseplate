@@ -1,0 +1,10 @@
+local CreateGameMenu, showToast, C, ScreenGui = ...
+
+local Menu = CreateGameMenu()
+
+local MainTab = Menu.CreateTab("Main Scripts")
+Menu.AddHeader(MainTab, "test")
+
+Menu.AddButton(MainTab, "Print Hello World", function()
+    print("Hello World")
+end)
