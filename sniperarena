@@ -1,1 +1,594 @@
+local CreateGameMenu, showToast, C, ScreenGui = ...
 
+local Menu = CreateGameMenu()
+
+local CombatTab  = Menu.CreateTab("Combat")
+local VisualsTab  = Menu.CreateTab("Visuals")
+local SettingsTab = Menu.CreateTab("Settings")
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
+local LocalPlayer = Players.LocalPlayer
+
+local aimbotEnabled      = false
+local triggerbotEnabled   = false
+local wallCheckEnabled    = true
+local teamCheckEnabled    = true
+local aimSmoothness      = 5
+local aimRadius          = 150
+local fovVisible         = false
+local aimTargetPart      = "Head"
+
+local lastRightClickTime = 0
+local triggerbotDelay    = 0.12
+
+local espThickness        = 2
+local maxEspDistance = 1000
+local boxEspEnabled    = false
+local nameEspEnabled   = false
+
+local colorPreset = {
+    {name = "Crimson Red", color = Color3.fromRGB(255, 50, 50)},
+    {name = "Neon Mint",   color = Color3.fromRGB(0, 255, 140)},
+    {name = "Deep Blue",   color = Color3.fromRGB(0, 160, 255)},
+    {name = "Pure White",  color = Color3.fromRGB(255, 255, 255)}
+}
+
+local boxColorIdx  = 1 
+local nameColorIdx = 4 
+local espColor      = colorPreset[boxColorIdx].color
+local espNameColor   = colorPreset[nameColorIdx].color
+
+local mainRenderConn  = nil
+local inputBeganConn  = nil
+local fovCircleDraw   = nil
+local espRenderConn   = nil
+local espData         = {}
+
+local flyEnabled       = false
+local flySpeed         = 25
+local noclipEnabled     = false
+local walkSpeedEnabled  = false
+local customWalkSpeed   = 35
+local jumpPowerEnabled  = false
+local customJumpPower   = 50
+
+local movementConn     = nil 
+local flyBodyVel       = nil
+local flyBodyGyro      = nil
+local charAddedConn    = nil
+local spawnGracePeriod = false
+
+local FILE_NAME = "SniperArena_Config.json"
+
+local function isPlayerAliveAndActive(player)
+    if not player or player == LocalPlayer then return false end
+    
+    if player.Team and (player.Team.Name:lower():find("spectat") or player.Team.Name:lower():find("dead") or player.Team.Name:lower():find("lobby")) then 
+        return false 
+    end
+
+    if player:GetAttribute("Spectating") == true or player:GetAttribute("IsDead") == true or player:GetAttribute("Spectator") == true then
+        return false
+    end
+    if player:FindFirstChild("Spectating") or player:FindFirstChild("IsSpectating") or player:FindFirstChild("Spectator") then
+        return false
+    end
+    
+    local char = player.Character
+    if not char or not char:IsDescendantOf(workspace) then return false end
+    
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then return false end
+    
+    local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head")
+    if not hrp then return false end
+
+    if hrp.Position.Y < -500 or (workspace.CurrentCamera and (hrp.Position - workspace.CurrentCamera.CFrame.Position).Magnitude < 2) then
+        return false
+    end
+
+    local head = char:FindFirstChild("Head")
+    if head and head:IsA("BasePart") and head.Transparency >= 0.9 then
+        return false
+    end
+    
+    return true
+end
+
+local function updateMovement(loopTime, deltaTime)
+    if spawnGracePeriod then return end
+
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum then return end
+
+    if walkSpeedEnabled and not flyEnabled then
+        hum.WalkSpeed = customWalkSpeed
+    end
+
+    if jumpPowerEnabled then
+        hum.UseJumpPower = true
+        hum.JumpPower = customJumpPower
+    end
+
+    if noclipEnabled then
+        hum:ChangeState(Enum.HumanoidStateType.NoClip)
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+    end
+
+    if flyEnabled then
+        if not flyBodyVel or flyBodyVel.Parent ~= hrp then
+            pcall(function() if flyBodyVel then flyBodyVel:Destroy() end end)
+            flyBodyVel = Instance.new("BodyVelocity")
+            flyBodyVel.Name = "StabilizedFlightVelocity"
+            flyBodyVel.Parent = hrp
+        end
+        
+        if not flyBodyGyro or flyBodyGyro.Parent ~= hrp then
+            pcall(function() if flyBodyGyro then flyBodyGyro:Destroy() end end)
+            flyBodyGyro = Instance.new("BodyGyro")
+            flyBodyGyro.Name = "StabilizedFlightGyro"
+            flyBodyGyro.Parent = hrp
+        end
+
+        flyBodyVel.MaxForce = Vector3.new(4e5, 4e5, 4e5)
+        flyBodyGyro.MaxTorque = Vector3.new(4e5, 4e5, 4e5)
+
+        local camera = workspace.CurrentCamera
+        if camera then 
+            flyBodyGyro.CFrame = camera.CFrame 
+        end
+
+        local moveDir = Vector3.zero
+        
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+            moveDir = moveDir + camera.CFrame.LookVector
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+            moveDir = moveDir - camera.CFrame.LookVector
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+            moveDir = moveDir - camera.CFrame.RightVector
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+            moveDir = moveDir + camera.CFrame.RightVector
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+            moveDir = moveDir + Vector3.new(0, 1, 0)
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
+            moveDir = moveDir - Vector3.new(0, 1, 0)
+        end
+
+        if moveDir.Magnitude > 0 then
+            flyBodyVel.Velocity = moveDir.Unit * flySpeed
+        else
+            flyBodyVel.Velocity = Vector3.zero
+        end
+
+        if hum.CurrentStateType ~= Enum.HumanoidStateType.Physics then
+            hum:ChangeState(Enum.HumanoidStateType.Physics)
+        end
+    end
+end
+
+local function manageMovementState()
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+
+    if flyEnabled or noclipEnabled or walkSpeedEnabled or jumpPowerEnabled then
+        if not movementConn then
+            movementConn = RunService.Stepped:Connect(updateMovement)
+        end
+        
+        if not charAddedConn then
+            charAddedConn = LocalPlayer.CharacterAdded:Connect(function(newChar)
+                spawnGracePeriod = true
+                
+                if flyBodyVel then pcall(function() flyBodyVel:Destroy() end); flyBodyVel = nil end
+                if flyBodyGyro then pcall(function() flyBodyGyro:Destroy() end); flyBodyGyro = nil end
+                
+                task.wait(2.5)
+                spawnGracePeriod = false
+            end)
+        end
+    else
+        if movementConn then
+            movementConn:Disconnect()
+            movementConn = nil
+        end
+        if charAddedConn then
+            charAddedConn:Disconnect()
+            charAddedConn = nil
+        end
+    end
+
+    if not flyEnabled then
+        if flyBodyVel then pcall(function() flyBodyVel:Destroy() end); flyBodyVel = nil end
+        if flyBodyGyro then pcall(function() flyBodyGyro:Destroy() end); flyBodyGyro = nil end
+        if hum then 
+            hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+            if not walkSpeedEnabled then hum.WalkSpeed = 16 end
+        end
+    end
+end
+
+local function toggleFly(s) flyEnabled = s; manageMovementState() end
+local function toggleNoclip(s) noclipEnabled = s; manageMovementState() end
+local function toggleWalkSpeed(s) walkSpeedEnabled = s; manageMovementState() end
+local function toggleJumpPower(s) jumpPowerEnabled = s; manageMovementState() end
+
+local function saveConfig()
+    local configData = {
+        aimbotEnabled = aimbotEnabled,
+        triggerbotEnabled = triggerbotEnabled,
+        wallCheckEnabled = wallCheckEnabled,
+        teamCheckEnabled = teamCheckEnabled,
+        aimSmoothness = aimSmoothness,
+        aimRadius = aimRadius,
+        fovVisible = fovVisible,
+        aimTargetPart = aimTargetPart,
+        triggerbotDelay = triggerbotDelay,
+        espThickness = espThickness,
+        maxEspDistance = maxEspDistance,
+        boxEspEnabled = boxEspEnabled,
+        nameEspEnabled = nameEspEnabled,
+        flyEnabled = flyEnabled,
+        flySpeed = flySpeed,
+        noclipEnabled = noclipEnabled,
+        walkSpeedEnabled = walkSpeedEnabled,
+        customWalkSpeed = customWalkSpeed,
+        jumpPowerEnabled = jumpPowerEnabled,
+        customJumpPower = customJumpPower
+    }
+    
+    local success, jsonString = pcall(function()
+        return HttpService:JSONEncode(configData)
+    end)
+    
+    if success and writefile then
+        writefile(FILE_NAME, jsonString)
+    end
+end
+
+local function loadConfig()
+    if not readfile or not isfile or not isfile(FILE_NAME) then return end
+    
+    local fileContent = readfile(FILE_NAME)
+    local success, configData = pcall(function()
+        return HttpService:JSONDecode(fileContent)
+    end)
+    
+    if success and configData then
+        if configData.aimbotEnabled ~= nil then aimbotEnabled = configData.aimbotEnabled end
+        if configData.triggerbotEnabled ~= nil then triggerbotEnabled = configData.triggerbotEnabled end
+        if configData.wallCheckEnabled ~= nil then wallCheckEnabled = configData.wallCheckEnabled end
+        if configData.teamCheckEnabled ~= nil then teamCheckEnabled = configData.teamCheckEnabled end
+        if configData.aimSmoothness ~= nil then aimSmoothness = configData.aimSmoothness end
+        if configData.aimRadius ~= nil then aimRadius = configData.aimRadius end
+        if configData.fovVisible ~= nil then fovVisible = configData.fovVisible end
+        if configData.aimTargetPart ~= nil then aimTargetPart = configData.aimTargetPart end
+        if configData.triggerbotDelay ~= nil then triggerbotDelay = configData.triggerbotDelay end
+        if configData.espThickness ~= nil then espThickness = configData.espThickness end
+        if configData.maxEspDistance ~= nil then maxEspDistance = configData.maxEspDistance end
+        if configData.boxEspEnabled ~= nil then boxEspEnabled = configData.boxEspEnabled end
+        if configData.nameEspEnabled ~= nil then nameEspEnabled = configData.nameEspEnabled end
+        if configData.flyEnabled ~= nil then flyEnabled = configData.flyEnabled end
+        if configData.flySpeed ~= nil then flySpeed = configData.flySpeed end
+        if configData.noclipEnabled ~= nil then noclipEnabled = configData.noclipEnabled end
+        if configData.walkSpeedEnabled ~= nil then walkSpeedEnabled = configData.walkSpeedEnabled end
+        if configData.customWalkSpeed ~= nil then customWalkSpeed = configData.customWalkSpeed end
+        if configData.jumpPowerEnabled ~= nil then jumpPowerEnabled = configData.jumpPowerEnabled end
+        if configData.customJumpPower ~= nil then customJumpPower = configData.customJumpPower end
+    
+        manageConnections()
+        manageESPState()
+        manageMovementState()
+    end
+end
+
+pcall(function()
+    if Drawing and Drawing.new then
+        fovCircleDraw = Drawing.new("Circle")
+        fovCircleDraw.Thickness = 1
+        fovCircleDraw.NumSides = 60
+        fovCircleDraw.Filled = false
+        fovCircleDraw.Color = Color3.fromRGB(255, 255, 255)
+        fovCircleDraw.Visible = false
+    end
+end)
+
+function getClosestPlayerInstance()
+    local target = nil
+    local shortestDistance = math.huge
+    local camera = workspace.CurrentCamera
+    if not camera then return nil end
+    
+    local mouseLocation = UserInputService:GetMouseLocation()
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if not isPlayerAliveAndActive(player) then continue end
+        if teamCheckEnabled and player.Team == LocalPlayer.Team then continue end
+
+        local char = player.Character
+        local part = char:FindFirstChild(aimTargetPart)
+
+        if part then
+            local screenPos, onScreen = camera:WorldToViewportPoint(part.Position)
+            if onScreen then
+                local distance = (Vector2.new(screenPos.X, screenPos.Y) - mouseLocation).Magnitude
+                if distance < shortestDistance and distance <= aimRadius then
+                    
+                    if wallCheckEnabled then
+                        local raycastParams = RaycastParams.new()
+                        raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+                        raycastParams.FilterDescendantsInstances = {LocalPlayer.Character, char, camera}
+                        raycastParams.IgnoreWater = true
+                        
+                        local rayResult = workspace:Raycast(camera.CFrame.Position, part.Position - camera.CFrame.Position, raycastParams)
+                        if rayResult and rayResult.Instance and not rayResult.Instance:IsDescendantOf(char) then 
+                            continue 
+                        end
+                    end
+
+                    target = part
+                    shortestDistance = distance
+                end
+            end
+        end
+    end
+    return target
+end
+
+function getClosestPlayerScreen()
+    local targetPart = getClosestPlayerInstance()
+    if targetPart then
+        local camera = workspace.CurrentCamera
+        local screenPos, _ = camera:WorldToViewportPoint(targetPart.Position)
+        return screenPos
+    end
+    return nil
+end
+
+function systemUpdate()
+    local camera = workspace.CurrentCamera
+    if not camera then return end
+
+    if fovCircleDraw then
+        fovCircleDraw.Position = UserInputService:GetMouseLocation()
+        fovCircleDraw.Radius = aimRadius
+        fovCircleDraw.Visible = fovVisible
+    end
+
+    local isRightClickActive = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
+
+    if aimbotEnabled and isRightClickActive then
+        local targetScreenPos = getClosestPlayerScreen()
+        if targetScreenPos and mousemoverel then
+            local mouseLocation = UserInputService:GetMouseLocation()
+            local deltaX = (targetScreenPos.X - mouseLocation.X) / aimSmoothness
+            local deltaY = (targetScreenPos.Y - mouseLocation.Y) / aimSmoothness
+            mousemoverel(deltaX, deltaY)
+        end
+    end
+
+    if triggerbotEnabled and isRightClickActive then
+        if (os.clock() - lastRightClickTime) > 0.25 then
+            local mouseLocation = UserInputService:GetMouseLocation()
+            local unitRay = camera:ViewportPointToRay(mouseLocation.X, mouseLocation.Y)
+            
+            local rayParams = RaycastParams.new()
+            rayParams.FilterType = Enum.RaycastFilterType.Exclude
+            rayParams.FilterDescendantsInstances = {LocalPlayer.Character, camera}
+            
+            local rayResult = workspace:Raycast(unitRay.Origin, unitRay.Direction * 5000, rayParams)
+            if rayResult and rayResult.Instance then
+                local targetChar = rayResult.Instance:FindFirstAncestorOfClass("Model")
+                if targetChar then
+                    local targetPlr = Players:GetPlayerFromCharacter(targetChar)
+                    
+                    if targetPlr and isPlayerAliveAndActive(targetPlr) then
+                        if not (teamCheckEnabled and targetPlr.Team == LocalPlayer.Team) then
+                            mouse1press()
+                            task.wait(0.02)
+                            mouse1release()
+                            task.wait(triggerbotDelay)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+function manageConnections()
+    if aimbotEnabled or fovVisible or triggerbotEnabled then
+        if not mainRenderConn then
+            mainRenderConn = RunService.RenderStepped:Connect(systemUpdate)
+        end
+        if not inputBeganConn then
+            inputBeganConn = UserInputService.InputBegan:Connect(function(input, processed)
+                if not processed and input.UserInputType == Enum.UserInputType.MouseButton2 then
+                    lastRightClickTime = os.clock()
+                end
+            end)
+        end
+    else
+        if mainRenderConn then mainRenderConn:Disconnect(); mainRenderConn = nil end
+        if inputBeganConn then inputBeganConn:Disconnect(); inputBeganConn = nil end
+        if fovCircleDraw then fovCircleDraw.Visible = false end
+    end
+end
+
+function buildESPFrame(player)
+    local holder = Instance.new("Frame")
+    holder.Name = "ESP_" .. player.Name
+    holder.BackgroundTransparency = 1
+    holder.BorderSizePixel = 0
+    holder.Size = UDim2.new(0, 0, 0, 0)
+    holder.Parent = ScreenGui
+
+    local function makeLine()
+        local f = Instance.new("Frame")
+        f.BackgroundColor3 = espColor
+        f.BorderSizePixel = 0
+        f.ZIndex = 21
+        f.Parent = holder
+        return f
+    end
+
+    local nameTag = Instance.new("TextLabel")
+    nameTag.BackgroundTransparency = 1
+    nameTag.TextColor3 = espNameColor
+    nameTag.TextStrokeTransparency = 0.5
+    nameTag.Font = Enum.Font.GothamBold
+    nameTag.TextSize = 11
+    nameTag.Text = player.Name
+    nameTag.Size = UDim2.new(0, 120, 0, 14)
+    nameTag.TextXAlignment = Enum.TextXAlignment.Center
+    nameTag.ZIndex = 22
+    nameTag.Visible = false
+    nameTag.Parent = ScreenGui
+
+    return {
+        holder = holder,
+        top = makeLine(),
+        bot = makeLine(),
+        left = makeLine(),
+        right = makeLine(),
+        nameTag = nameTag
+    }
+end
+
+function destroyESPFor(player)
+    local d = espData[player]
+    if not d then return end
+    if d.holder  and d.holder.Parent  then d.holder:Destroy()  end
+    if d.nameTag and d.nameTag.Parent then d.nameTag:Destroy() end
+    espData[player] = nil
+end
+
+function updateESP()
+    local camera = workspace.CurrentCamera
+    if not camera then return end
+
+    for cachedPlayer, _ in pairs(espData) do
+        if not Players:FindFirstChild(cachedPlayer.Name) then
+            destroyESPFor(cachedPlayer)
+        end
+    end
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+
+        if not isPlayerAliveAndActive(player) then
+            local d = espData[player]
+            if d then
+                d.holder.Visible = false
+                d.nameTag.Visible = false
+            end
+            continue
+        end
+
+        local char = player.Character
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+
+        if not espData[player] then espData[player] = buildESPFrame(player) end
+        local d = espData[player]
+
+        local pos = hrp.Position
+        local distance = (camera.CFrame.Position - pos).Magnitude
+        if distance > maxEspDistance then
+            d.holder.Visible = false
+            d.nameTag.Visible = false
+            continue
+        end
+
+        local topSP = camera:WorldToViewportPoint(pos + Vector3.new(0, 3.5, 0))
+        local botSP = camera:WorldToViewportPoint(pos - Vector3.new(0, 3.2, 0))
+
+        if topSP.Z > 0 and botSP.Z > 0 then
+            local topY = math.min(topSP.Y, botSP.Y)
+            local botY = math.max(topSP.Y, botSP.Y)
+            local h = botY - topY
+            local w = h * 0.45
+            local x = (topSP.X + botSP.X) / 2 - (w / 2)
+
+            local t = espThickness
+            d.top.BackgroundColor3 = espColor
+            d.bot.BackgroundColor3 = espColor
+            d.left.BackgroundColor3 = espColor
+            d.right.BackgroundColor3 = espColor
+            d.nameTag.TextColor3 = espNameColor
+
+            d.holder.Position = UDim2.new(0, x, 0, topY)
+            d.holder.Size = UDim2.new(0, w, 0, h)
+            d.holder.Visible = boxEspEnabled
+
+            if boxEspEnabled then
+                d.top.Size = UDim2.new(1, 0, 0, t); d.top.Position = UDim2.new(0, 0, 0, 0)
+                d.bot.Size = UDim2.new(1, 0, 0, t); d.bot.Position = UDim2.new(0, 0, 1, -t)
+                d.left.Size = UDim2.new(0, t, 1, 0); d.left.Position = UDim2.new(0, 0, 0, 0)
+                d.right.Size = UDim2.new(0, t, 1, 0); d.right.Position = UDim2.new(1, -t, 0, 0)
+            end
+
+            d.nameTag.Position = UDim2.new(0, x + (w / 2) - 60, 0, topY - 16)
+            d.nameTag.Visible = nameEspEnabled
+        else
+            d.holder.Visible = false
+            d.nameTag.Visible = false
+        end
+    end
+end
+
+function manageESPState()
+    if boxEspEnabled or nameEspEnabled then
+        if not espRenderConn then espRenderConn = RunService.RenderStepped:Connect(updateESP) end
+    else
+        if espRenderConn then espRenderConn:Disconnect(); espRenderConn = nil end
+        for player, _ in pairs(espData) do destroyESPFor(player) end
+        espData = {}
+    end
+end
+
+Menu.AddHeader(CombatTab, "Aim")
+Menu.AddToggle(CombatTab, "Enable Aimbot", false, function(s) aimbotEnabled = s; manageConnections() end)
+Menu.AddToggle(CombatTab, "Enable Right-Click Triggerbot", false, function(s) triggerbotEnabled = s; manageConnections() end)
+Menu.AddToggle(CombatTab, "Team Check", true, function(s) teamCheckEnabled = s end)
+Menu.AddToggle(CombatTab, "Wall Check", true, function(s) wallCheckEnabled = s end)
+Menu.AddToggle(CombatTab, "Show FOV Circle", false, function(s) fovVisible = s; manageConnections() end)
+
+Menu.AddHeader(CombatTab, "Target Selection")
+for _, part in ipairs({"Head", "HumanoidRootPart", "UpperTorso"}) do
+    Menu.AddButton(CombatTab, "Aim Target: " .. part, function() aimTargetPart = part end)
+end
+Menu.AddSlider(CombatTab, "FOV Radius", 30, 500, aimRadius, function(v) aimRadius = v end)
+Menu.AddSlider(CombatTab, "Aimbot Smoothness (Lower=faster)", 1, 20, aimSmoothness, function(v) aimSmoothness = v end)
+
+Menu.AddHeader(VisualsTab, "ESP")
+Menu.AddToggle(VisualsTab, "2D Box ESP", false, function(state) boxEspEnabled = state; manageESPState() end)
+Menu.AddToggle(VisualsTab, "Name ESP", false, function(state) nameEspEnabled = state; manageESPState() end)
+
+Menu.AddHeader(SettingsTab, "ESP Configuration")
+Menu.AddSlider(SettingsTab, "Line Thickness (px)", 1, 6, espThickness, function(val) espThickness = val end)
+Menu.AddSlider(SettingsTab, "Max Render Distance", 100, 3000, maxEspDistance, function(val) maxEspDistance = val end)
+
+local oldClose = Menu.OnClose or function() end
+Menu.OnClose = function()
+    aimbotEnabled = false; triggerbotEnabled = false; fovVisible = false
+    manageConnections()
+    boxEspEnabled = false; nameEspEnabled = false; manageESPState()
+
+    flyEnabled = false; noclipEnabled = false; walkSpeedEnabled = false; jumpPowerEnabled = false; manageMovementState()
+    
+    if fovCircleDraw then pcall(function() fovCircleDraw:Destroy() end) end
+    oldClose()
+end
