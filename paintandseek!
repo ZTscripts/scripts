@@ -1,0 +1,420 @@
+local CreateGameMenu, showToast, C, ScreenGui = ...
+
+local Menu = CreateGameMenu()
+
+local ScriptTab = Menu.CreateTab("Hiders")
+local VisualTab = Menu.CreateTab("Visuals")
+local ConfigTab = Menu.CreateTab("Settings")
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+
+local TARGET_CFRAME = CFrame.new(433, -102, 137)
+local TWEEN_SPEED = 60 
+local platformEnabled = false
+
+local clientPlatform = nil
+local highlightsEnabled = false
+local activeHighlights = {} 
+
+local espThickness        = 2
+local maxEspDistance = 1000
+
+local colorPreset = {
+    {name = "Crimson Red", color = Color3.fromRGB(255, 50, 50)},
+    {name = "Neon Mint",   color = Color3.fromRGB(0, 255, 140)},
+    {name = "Deep Blue",   color = Color3.fromRGB(0, 160, 255)},
+    {name = "Hot Pink",    color = Color3.fromRGB(255, 50, 180)},
+    {name = "Bright Gold", color = Color3.fromRGB(255, 215, 0)},
+    {name = "Pure White",  color = Color3.fromRGB(255, 255, 255)}
+}
+
+local boxColorIdx  = 1 
+local nameColorIdx = 6 
+
+local espColor      = colorPreset[boxColorIdx].color
+local espNameColor   = colorPreset[nameColorIdx].color
+
+local boxEspEnabled  = false
+local nameEspEnabled = false
+
+local espData = {}
+local espRenderConn   = nil
+local espAddedConn    = nil
+local espRemovingConn = nil
+local function isPlayerAliveAndActive(player)
+    if not player or player == LocalPlayer then return false end
+    
+    local char = player.Character
+    if not char or not char:IsDescendantOf(workspace) then return false end
+    
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then return false end
+    
+    local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head")
+    if not hrp then return false end
+    
+    return true
+end
+
+local function togglePlatform(state)
+    platformEnabled = state
+    
+    if platformEnabled then
+        local character = LocalPlayer.Character
+        local hrp = character and character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            if clientPlatform then clientPlatform:Destroy() end
+            
+            clientPlatform = Instance.new("Part")
+            clientPlatform.Name = "ClientSafePlatform"
+            clientPlatform.Size = Vector3.new(12, 1, 12)
+            clientPlatform.CFrame = hrp.CFrame * CFrame.new(0, -3.5, 0)
+            clientPlatform.Transparency = 0.5
+            clientPlatform.Color = Color3.fromRGB(0, 255, 140)
+            clientPlatform.Material = Enum.Material.SmoothPlastic
+            clientPlatform.Anchored = true
+            clientPlatform.CanCollide = true
+            clientPlatform.Parent = workspace
+        end
+    else
+        if clientPlatform then
+            clientPlatform:Destroy()
+            clientPlatform = nil
+        end
+    end
+end
+
+local function teleportPlayer()
+    local character = LocalPlayer.Character
+    local hrp = character and character:FindFirstChild("HumanoidRootPart")
+    
+    if hrp then
+        local distance = (hrp.Position - TARGET_CFRAME.Position).Magnitude
+        local duration = distance / TWEEN_SPEED
+        if duration < 0.2 then duration = 0.2 end 
+        
+        showToast("Teleporting", "safe spot located, moving character..", "info")
+        
+        local tweenNoclip = RunService.Stepped:Connect(function()
+            if LocalPlayer.Character then
+                for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        part.CanCollide = false
+                    end
+                end
+            end
+        end)
+        
+        local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut)
+        local tween = TweenService:Create(hrp, tweenInfo, {CFrame = TARGET_CFRAME})
+        
+        tween.Completed:Connect(function()
+            if tweenNoclip then tweenNoclip:Disconnect() end
+            
+            hrp.Velocity = Vector3.zero
+            hrp.RotVelocity = Vector3.zero
+            
+            local paintRemotes = ReplicatedStorage:WaitForChild("PaintRemotes", 5)
+            if paintRemotes then
+                local updatePos = paintRemotes:FindFirstChild("UpdatePosition") or paintRemotes:FindFirstChild("SetFrozen")
+                if updatePos then
+                    updatePos:FireServer(TARGET_CFRAME)
+                end
+            end
+        end)
+        
+        tween:Play()
+    end
+end
+
+local function highlightCharacter(player)
+    if player == LocalPlayer then return end 
+    
+    local function onCharAdded(char)
+        if not highlightsEnabled then return end
+        if activeHighlights[player] then activeHighlights[player]:Destroy() end
+        
+        local highlight = Instance.new("Highlight")
+        highlight.Name = "PlayerEspHighlight"
+        highlight.FillColor = Color3.fromRGB(255, 0, 0)
+        highlight.FillTransparency = 0.5
+        highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+        highlight.OutlineTransparency = 0
+        highlight.Adornee = char
+        highlight.Parent = char
+        
+        activeHighlights[player] = highlight
+    end
+    
+    if player.Character then onCharAdded(player.Character) end
+    
+    local connection
+    connection = player.CharacterAdded:Connect(function(char)
+        if not highlightsEnabled then
+            connection:Disconnect()
+            return
+        end
+        onCharAdded(char)
+    end)
+end
+
+local function toggleHighlights(state)
+    highlightsEnabled = state
+    
+    if highlightsEnabled then
+        for _, player in ipairs(Players:GetPlayers()) do
+            highlightCharacter(player)
+        end
+    else
+        for player, highlight in pairs(activeHighlights) do
+            if highlight then highlight:Destroy() end
+        end
+        activeHighlights = {}
+    end
+end
+
+local function buildESPFrame(player)
+    local holder = Instance.new("Frame")
+    holder.Name                   = "ESP_" .. player.Name
+    holder.BackgroundTransparency = 1
+    holder.BorderSizePixel        = 0
+    holder.Size                   = UDim2.new(0, 0, 0, 0)
+    holder.ClipsDescendants       = false
+    holder.ZIndex                 = 20
+    holder.Parent                 = ScreenGui
+
+    local function makeLine()
+        local f = Instance.new("Frame")
+        f.BackgroundColor3  = espColor
+        f.BorderSizePixel   = 0
+        f.ZIndex            = 21
+        f.Parent            = holder
+        return f
+    end
+
+    local nameTag = Instance.new("TextLabel")
+    nameTag.BackgroundTransparency = 1
+    nameTag.TextColor3             = espNameColor
+    nameTag.TextStrokeTransparency = 0.5
+    nameTag.TextStrokeColor3       = Color3.new(0, 0, 0)
+    nameTag.Font                   = Enum.Font.GothamBold
+    nameTag.TextSize               = 11
+    nameTag.Text                   = player.Name
+    nameTag.Size                   = UDim2.new(0, 120, 0, 14)
+    nameTag.TextXAlignment         = Enum.TextXAlignment.Center
+    nameTag.ZIndex                 = 22
+    nameTag.Visible                = false
+    nameTag.Parent                 = ScreenGui
+
+    return {
+        holder  = holder,
+        top     = makeLine(),
+        bot     = makeLine(),
+        left    = makeLine(),
+        right   = makeLine(),
+        nameTag = nameTag
+    }
+end
+
+local function destroyESPFor(player)
+    local d = espData[player]
+    if not d then return end
+    if d.holder  and d.holder.Parent  then d.holder:Destroy()  end
+    if d.nameTag and d.nameTag.Parent then d.nameTag:Destroy() end
+    espData[player] = nil
+end
+
+local function destroyAllESP()
+    for player, _ in pairs(espData) do
+        destroyESPFor(player)
+    end
+    espData = {}
+end
+
+local topOffset = 3.5   
+local botOffset = 3.2   
+local widthRatio = 0.45 
+
+local function getScreenBounds(char, camera)
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+
+    local distance = (camera.CFrame.Position - hrp.Position).Magnitude
+    if distance > maxEspDistance then return nil end
+
+    local pos = hrp.Position
+    local topSP = camera:WorldToViewportPoint(pos + Vector3.new(0,  topOffset, 0))
+    local botSP = camera:WorldToViewportPoint(pos - Vector3.new(0,  botOffset, 0))
+
+    if topSP.Z <= 0 or botSP.Z <= 0 then return nil end
+
+    local topY = math.min(topSP.Y, botSP.Y)
+    local botY = math.max(topSP.Y, botSP.Y)
+    local screenH = botY - topY
+    if screenH < 5 then return nil end  
+
+    local screenW = screenH * widthRatio
+    local centerX = (topSP.X + botSP.X) / 2
+    local pad = 2
+    
+    return  centerX - screenW / 2 - pad, topY - pad, screenW + pad * 2, screenH + pad * 2
+end
+
+local function updateESP()
+    local camera = workspace.CurrentCamera
+    if not camera then return end
+    for cachedPlayer, _ in pairs(espData) do
+        if not Players:FindFirstChild(cachedPlayer.Name) then
+            destroyESPFor(cachedPlayer)
+        end
+    end
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+        if not isPlayerAliveAndActive(player) then
+            local d = espData[player]
+            if d then
+                d.holder.Visible  = false
+                d.nameTag.Visible = false
+            end
+            continue
+        end
+
+        local char = player.Character
+
+        if not espData[player] then
+            espData[player] = buildESPFrame(player)
+        end
+        local d = espData[player]
+
+        local x, y, w, h = getScreenBounds(char, camera)
+
+        if not x then
+            d.holder.Visible  = false
+            d.nameTag.Visible = false
+            continue
+        end
+
+        local t = espThickness
+
+        d.top.BackgroundColor3 = espColor
+        d.bot.BackgroundColor3 = espColor
+        d.left.BackgroundColor3 = espColor
+        d.right.BackgroundColor3 = espColor
+        d.nameTag.TextColor3 = espNameColor
+
+        d.holder.Position = UDim2.new(0, x, 0, y)
+        d.holder.Size     = UDim2.new(0, w, 0, h)
+        d.holder.Visible  = boxEspEnabled
+
+        if boxEspEnabled then
+            d.top.Position = UDim2.new(0, 0, 0, 0)
+            d.top.Size = UDim2.new(1, 0, 0, t)
+            d.bot.Position = UDim2.new(0, 0, 1, -t)
+            d.bot.Size = UDim2.new(1, 0, 0, t)
+            d.left.Position = UDim2.new(0, 0, 0, 0)
+            d.left.Size = UDim2.new(0, t, 1, 0)
+            d.right.Position = UDim2.new(1, -t, 0, 0)
+            d.right.Size = UDim2.new(0, t, 1, 0)
+        end
+
+        d.nameTag.Position = UDim2.new(0, x + w / 2 - 60, 0, y - 16)
+        d.nameTag.Visible  = nameEspEnabled
+    end
+end
+
+local function manageESPState()
+    if boxEspEnabled or nameEspEnabled then
+        if not espRenderConn then
+            espRenderConn = RunService.RenderStepped:Connect(updateESP)
+        end
+        if not espAddedConn then
+            espAddedConn = Players.PlayerAdded:Connect(function(p) end)
+        end
+        if not espRemovingConn then
+            espRemovingConn = Players.PlayerRemoving:Connect(function(p)
+                destroyESPFor(p)
+            end)
+        end
+    else
+        if espRenderConn   then espRenderConn:Disconnect(); espRenderConn   = nil end
+        if espAddedConn    then espAddedConn:Disconnect(); espAddedConn    = nil end
+        if espRemovingConn then espRemovingConn:Disconnect(); espRemovingConn = nil end
+        destroyAllESP()
+    end
+end
+
+local playerAddedConn = Players.PlayerAdded:Connect(function(player)
+    if highlightsEnabled then highlightCharacter(player) end
+end)
+
+local playerRemovingConn = Players.PlayerRemoving:Connect(function(player)
+    if activeHighlights[player] then
+        activeHighlights[player]:Destroy()
+        activeHighlights[player] = nil
+    end
+end)
+
+local baseCleanUp = Menu.OnClose or function() end
+Menu.OnClose = function()
+    togglePlatform(false)
+    toggleHighlights(false)
+    
+    boxEspEnabled = false
+    nameEspEnabled = false
+    manageESPState()
+    
+    if playerAddedConn then playerAddedConn:Disconnect() end
+    if playerRemovingConn then playerRemovingConn:Disconnect() end
+    baseCleanUp()
+end
+
+Menu.AddHeader(ScriptTab, "Player Modifications")
+Menu.AddToggle(ScriptTab, "spawn platform (platform after)", false, function(state)
+    togglePlatform(state)
+end)
+Menu.AddButton(ScriptTab, "move to safe spot", function()
+    teleportPlayer()
+end)
+
+Menu.AddHeader(VisualTab, "Roblox Highlight ESP")
+Menu.AddToggle(VisualTab, "Player ESP Highlights", false, function(state)
+    toggleHighlights(state)
+end)
+
+Menu.AddHeader(VisualTab, "Drawing API ESP (Main)")
+Menu.AddToggle(VisualTab, "2D Box ESP", false, function(state)
+    boxEspEnabled = state
+    manageESPState()
+end)
+Menu.AddToggle(VisualTab, "Name ESP", false, function(state)
+    nameEspEnabled = state
+    manageESPState()
+end)
+
+Menu.AddHeader(ConfigTab, "ESP Configuration")
+Menu.AddSlider(ConfigTab, "Line Thickness (px)", 1, 6, espThickness, function(val)
+    espThickness = val
+end)
+Menu.AddSlider(ConfigTab, "Max Render Distance", 100, 3000, maxEspDistance, function(val)
+    maxEspDistance = val
+end)
+
+Menu.AddHeader(ConfigTab, "Theme Customization")
+Menu.AddButton(ConfigTab, "Cycle Box ESP Color", function()
+    boxColorIdx = (boxColorIdx % #colorPreset) + 1
+    espColor = colorPreset[boxColorIdx].color
+    showToast("Theme Updated", "Box ESP set to " .. colorPreset[boxColorIdx].name, "info")
+end)
+Menu.AddButton(ConfigTab, "Cycle Name Tag Color", function()
+    nameColorIdx = (nameColorIdx % #colorPreset) + 1
+    espNameColor = colorPreset[nameColorIdx].color
+    showToast("Theme Updated", "Name Tag ESP set to " .. colorPreset[nameColorIdx].name, "info")
+end)
+
+showToast("Paint And SEEK!", "All features loaded successfully!", "info")
